@@ -8,12 +8,24 @@ your next stance dance, at a glance.
 
 ## Screenshots
 
-![RageForge curved rage bar, unlocked for repositioning](docs/screenshots/01-bar-idle.png)
+### In combat — the money shot
 
-*Idle bar (0 rage), unlocked. Threshold ticks at 10 / 15 / 25 / 30 / 50 / 75
-sit outside the bar to the right. The Battle Shout icon at the bottom-left
-appears whenever the buff is missing. More screenshots — combat, settings
-window, stance rail close-up — coming.*
+![RageForge in combat at 100 rage with dump hint and Battle Shout countdown](docs/screenshots/02-bar-in-combat.png)
+
+*Mid-fight at 100 rage. The bar runs through the full warrior palette —
+emerald (free dance) -> gold -> molten orange -> blood red (heavy loss). The
+**`-75`** label and the ghost line on the left edge show exactly what a stance
+dance would cost right now: drop from 100 to 25. Below the bar, the Battle
+Shout reminder shows a live 49s countdown — it'll start flashing once the
+buff drops under 30 seconds.*
+
+### Idle — the bar at 0 rage
+
+![Idle RageForge bar, unlocked for repositioning](docs/screenshots/01-bar-idle.png)
+
+*Idle bar at 0 rage, currently unlocked (`/rf lock` toggles this). Threshold
+ticks at 10 / 15 / 25 / 30 / 50 / 75 sit outside the bar to the right. The
+Battle Shout icon at the bottom-left appears whenever the buff is missing.*
 
 ## Creator
 
