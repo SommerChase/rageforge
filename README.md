@@ -1,10 +1,18 @@
-# RageForge
+<p align="center">
+  <img src="docs/branding/logo.png" alt="RageForge logo" width="220">
+</p>
 
-A smart rage display for stance-dancing TBC warriors on the WoW Classic
-Anniversary realms. Built for PvP-first decision making.
+<h1 align="center">RageForge</h1>
 
-The default rage bar tells you a number. RageForge tells you the *cost* of
-your next stance dance, at a glance.
+<p align="center">
+  A smart rage display for stance-dancing TBC warriors on the WoW Classic
+  Anniversary realms. Built for PvP-first decision making.
+</p>
+
+<p align="center">
+  The default rage bar tells you a number. RageForge tells you the <em>cost</em>
+  of your next stance dance, at a glance.
+</p>
 
 ## Screenshots
 
@@ -244,6 +252,9 @@ rageforge/
 |   +-- Core.lua         init, event router, OnUpdate driver
 |   +-- RageBar.lua      the curved bar, zones, ghost line, ticks, glow
 |   +-- Options.lua      standalone /rf settings window
++-- docs/
+|   +-- branding/        logo / icon assets for README, GitHub, CurseForge
+|   +-- screenshots/     in-game screenshots referenced from this README
 +-- .cursor/rules/       Cursor IDE rules for working on this addon
 ```
 
