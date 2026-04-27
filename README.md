@@ -6,6 +6,15 @@ Anniversary realms. Built for PvP-first decision making.
 The default rage bar tells you a number. RageForge tells you the *cost* of
 your next stance dance, at a glance.
 
+## Screenshots
+
+![RageForge curved rage bar, unlocked for repositioning](docs/screenshots/01-bar-idle.png)
+
+*Idle bar (0 rage), unlocked. Threshold ticks at 10 / 15 / 25 / 30 / 50 / 75
+sit outside the bar to the right. The Battle Shout icon at the bottom-left
+appears whenever the buff is missing. More screenshots — combat, settings
+window, stance rail close-up — coming.*
+
 ## Creator
 
 RageForge is built by **Chase Sommer**, a game designer who loves to play and
