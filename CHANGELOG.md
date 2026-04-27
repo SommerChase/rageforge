@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.8
+
+- Fixed settings window layout: bottom checkboxes (Stance icon rail, Big rage number, Rage cap warning, Battle Shout reminder) were overlapping the about/credits/footer text. Window grew taller and a separator line now divides the controls from the footer.
+
 ## 0.9.7
 
 - Added Battle Shout reminder with missing/expiring states, countdown text, death suppression, and local countdown fallback for Classic aura timing.

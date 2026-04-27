@@ -153,7 +153,7 @@ local function ensureWindow()
     if window then return end
 
     window = CreateFrame("Frame", "RageForgeOptionsWindow", UIParent)
-    window:SetSize(640, 520)
+    window:SetSize(640, 720)
     window:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     window:SetFrameStrata("DIALOG")
     window:SetMovable(true)
@@ -215,7 +215,7 @@ function Opt:Build()
     if registered then return true end
 
     panel = CreateFrame("Frame", "RageForgeOptionsPanel")
-    panel:SetSize(600, 470)
+    panel:SetSize(600, 680)
     panel.name = "RageForge"
 
     local cfg = ns.Config.db
@@ -327,6 +327,14 @@ function Opt:Build()
     fontSize:SetPoint("TOPLEFT", cbBattleShout, "BOTTOMLEFT", 4, -28)
 
     -- ===== Footer =====
+    -- Separator keeps the credits/footer text visually distinct from controls
+    -- so we never overlap the last Display checkbox with the about line again.
+    local sep = panel:CreateTexture(nil, "ARTWORK")
+    sep:SetColorTexture(0.55, 0.42, 0.22, 0.6)
+    sep:SetHeight(1)
+    sep:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 16, 82)
+    sep:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 82)
+
     local about = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     about:SetPoint("BOTTOMLEFT", 16, 56)
     about:SetWidth(540)
@@ -344,7 +352,7 @@ function Opt:Build()
     footer:SetPoint("BOTTOMLEFT", 16, 12)
     footer:SetWidth(540)
     footer:SetJustifyH("LEFT")
-    footer:SetText("RageForge v" .. (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version") or "0.9.7") ..
+    footer:SetText("RageForge v" .. (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version") or "0.9.8") ..
         "  \194\183  Settings auto-save. " ..
         "Bar geometry requires /reload.")
 

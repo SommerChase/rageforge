@@ -42,7 +42,7 @@ If you've ever stood in front of a healer thinking "do I have enough rage to
 dump and stance-dance into Overpower right now, or will I bleed out?" — this
 addon answers that question without you doing math.
 
-## Features (v0.9.7)
+## Features (v0.9.8)
 
 - **Smoother no-art curved bar** rendered as 1-pixel horizontal rows with
   full-opacity centers and soft left/right feather strips. Row centers are
