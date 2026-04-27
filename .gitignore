@@ -1,0 +1,16 @@
+.DS_Store
+Thumbs.db
+*.bak
+*.swp
+*.swo
+*~
+
+# Local-only cache from various tools
+.idea/
+.vscode/
+*.code-workspace
+
+# Common WoW build artifacts (none yet, but reserved)
+build/
+dist/
+*.zip

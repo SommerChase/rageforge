@@ -1,0 +1,12 @@
+## Interface: 20505
+## Title: RageForge
+## Notes: Smart rage display for stance-dancing TBC warriors. Curved bar, economy zones, ghost line, dump hint.
+## Author: Chase Sommer
+## Version: 0.9.7
+## SavedVariables: RageForgeDB
+## DefaultState: enabled
+
+Config.lua
+Core.lua
+RageBar.lua
+Options.lua

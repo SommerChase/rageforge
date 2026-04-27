@@ -1,0 +1,214 @@
+---
+description: Conventions and context for working on the RageForge WoW addon
+alwaysApply: true
+---
+
+# RageForge addon — conventions
+
+RageForge is a WoW Classic Anniversary (TBC content) addon written in Lua.
+It targets warrior PvP and helps with stance-dance rage economy.
+
+## Target client
+
+- **Client folder:** `_anniversary_`
+- **Interface number:** `20505` (TBC Anniversary, v2.5.5, as of 2026)
+- **Install path:**
+  `C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns\RageForge\`
+- Per-client TOC suffixes are not used; we ship a single `RageForge.toc`.
+- If a patch bumps the Interface number, update `RageForge.toc` first.
+
+## Project layout
+
+```
+rageforge/
+  RageForge/             addon folder; this is what gets copied into AddOns
+    RageForge.toc        manifest, file load order
+    Config.lua           SavedVariables, defaults, /rf slash command
+    Core.lua             event router + OnUpdate driver, no display logic
+    RageBar.lua          curved bar, zones, ghost line, ticks, cap glow
+    Options.lua          standalone /rf options settings window + optional AddOns registration
+    Fonts/Prototype.ttf  bundled font for bar UI (with Prototype.txt readme)
+  install.ps1            PowerShell copy / junction script
+  package.ps1            builds clean release zip in dist/
+  CHANGELOG.md           user-facing release notes
+  LICENSE                MIT license
+  README.md
+  .cursor/rules/         IDE rules (this file)
+```
+
+**Load order matters.** Config must load first (provides `ns.Config.db`),
+then Core (init), then RageBar (assumes Config is ready),
+then Options (which reads `ns.Config.db` and writes back through it).
+
+## Lua / WoW API conventions
+
+- All modules attach to the addon namespace: `local _, ns = ...; ns.X = {}`.
+  Never pollute globals beyond the unavoidable `RageForgeDB` SavedVar and
+  `SLASH_RAGEFORGE*` slash registrations.
+- Use `CreateFrame("Frame", ...)` for event handling; one frame per concern
+  is fine, but Core owns the main event router.
+- For rage: power type id is `1` (or `Enum.PowerType.Rage` if available).
+- For combat log parsing use `CombatLogGetCurrentEventInfo()`. The first 11
+  fields are always: `timestamp, subevent, hideCaster, sourceGUID, sourceName,
+  sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags`.
+  After that, payload depends on subevent:
+  - `SWING_*`: damage/miss params start at field 12.
+  - `SPELL_*`: `spellId, spellName, spellSchool` at 12-14, then payload.
+- Avoid per-frame allocations in `OnUpdate` (no table literals, no captures
+  in tight loops). The current OnFrame paths are allocation-free; keep it
+  that way.
+
+## Stance-dance math (the linchpin)
+
+Tactical Mastery in TBC retains 5 rage per rank, max 25 at 5/5. On stance
+change rage drops to `min(currentRage, retainedRage)`. The user-configurable
+value `cfg.tacticalMasteryRetained` is the single source of truth — every
+visual decision (zones, ghost line, number color) routes through it.
+
+**Never** hardcode `25`. Always read `ns.Config.db.tacticalMasteryRetained`.
+
+## Visual conventions
+
+- Zones (`cfg.zones`) are flat RGBA tables, not Color objects. `RageBar.lua`
+  blends between zone stops by returning raw `r,g,b,a` values; do not allocate
+  color tables per row/frame. Current palette is brighter than v0.5 but still
+  warrior-flavored: emerald -> bright gold -> molten orange -> blood red.
+- The bar is rendered as a **stack of 1-pixel horizontal rows**. Each row has
+  an opaque center `Texture` plus lower-alpha left/right feather textures.
+  Row centers are pixel-snapped (`snapPixel`) to reduce texture sampling
+  shimmer; feather strips soften the staircase edge. We tried `CreateLine`
+  chains in v0.3-0.4; chained thick lines do not seam cleanly because the
+  thickness is perpendicular to the line direction (so on slopes, lines become
+  visibly narrower than peers, producing horizontal stripes). Don't go back.
+  If the user wants a perfect bend, create custom TGA/BLP art in
+  `RageForge/Textures/` and reference it as
+  `Interface\\AddOns\\RageForge\\Textures\\<name>`.
+- Bar UI text uses bundled `Interface\\AddOns\\RageForge\\Fonts\\Prototype.ttf`
+  with `Fonts\\SKURRI.TTF` fallback through `setFont()` in RageBar.lua. New
+  RageBar text should call `setFont(fs, size, flags)` rather than `SetFont`
+  directly. The release zip must always include `Prototype.txt` next to the
+  font file because the font's own readme asks for that when redistributing.
+- **Nothing crosses the bar except the bar itself.** Ticks stay outside the
+  bar to the right. Ghost-line + dump-hint live outside the bar to the left.
+  Anchor ticks against `_barCenterlineX + xOff + barWidth/2`; anchor ghost
+  hints against `_barCenterlineX + xOff - barWidth/2`.
+- The ghost-line family (notch + line + dump-hint label) only shows when
+  `currentRage > retainedRage`. Below that, hide all three -- no decision to
+  make so no UI to draw.
+- No Overpower overlay/module. It was removed in v0.8 after user feedback.
+  Do not re-add combat-log dodge parsing, green rim glows, `/rf op`, or
+  `/rf test` unless the user explicitly asks for it again.
+- Fill rendering must keep each filled row center fully opaque. `Render()`
+  rounds `displayedRage` to the nearest whole rage before coloring slices so
+  the current-rage row never appears as a faded partial band. Only edge
+  feathers use reduced alpha.
+- Stance icons live in `stanceArtifacts`. They are square-cropped and rotated
+  via 8-argument `SetTexCoord` so each spell icon's top edge points left and
+  its bottom edge visually touches the bar. Keep them packed as a tight stack
+  (`stanceIconSize` spacing), with right edges snapped to the bar's left edge.
+  Do not tint/desaturate them; active stance may be alpha 1.0 and inactive
+  stances alpha-dimmed only. Active stance also shows
+  `Interface\\Buttons\\UI-ActionButton-Border` as a gold outline; don't tint
+  the icon itself. Classic can crop/rotate rectangular textures, but it cannot
+  truly mask arbitrary stance icons into a curved silhouette without custom
+  art. If the user wants a perfect bent/cropped strip, create custom TGA art in
+  `RageForge/Textures/` rather than trying to fake masks with frame layers.
+- Battle Shout reminder lives in RageBar.lua (`battleShoutFrame`). It shows
+  only for warriors when Battle Shout is missing or has <=
+  `cfg.battleShoutWarnSeconds` remaining. `UNIT_AURA` updates it immediately,
+  and `OnFrame` performs a 1-second aura refresh so the icon starts flashing
+  when a healthy buff naturally crosses the 30-second threshold. Detection is
+  intentionally tolerant of Classic aura return differences: compare by name,
+  substring, and icon path, and treat `expirationTime` as either an absolute
+  timestamp or remaining seconds. If remaining time exists, show it on
+  `battleShoutTimerFS`. Some clients expose only `duration`; in that case,
+  `UNIT_SPELLCAST_SUCCEEDED` and `battleShoutDurationStartedAt` provide a
+  local countdown so the reminder can still appear at <=30s. On successful
+  Battle Shout cast, hide the icon immediately and prefer the local countdown
+  over stale aura remaining time so reapplying the buff clears the warning.
+  Suppress it while `UnitIsDeadOrGhost("player")`.
+- **No background box, ever.** v0.1 had a translucent black panel, v0.2-0.4
+  had a faint blue `bgHandle` shown only when unlocked. Both got user
+  pushback. Drag affordance now lives in the `RAGE` label (text changes
+  to "RAGE \194\183 drag" in light blue when unlocked). Don't reintroduce
+  bg art.
+
+## Schema migrations (Config.lua)
+
+`fillDefaults` only fills *missing* keys. When you change the *value* of an
+existing default in a way that should propagate to existing users (e.g. a
+recolor), bump `C.SCHEMA_VERSION` and add a migration block in `C:Load`
+that hard-replaces the affected keys via `resetTo`. Otherwise users who
+already have a `RageForgeDB.lua` will be stuck on the old values forever.
+This also applies to array-like defaults such as `thresholdTicks`; adding a
+new tick value needs a schema migration because `fillDefaults` will not append
+new numeric indices to an existing saved table.
+
+## Slash commands
+
+User-facing: `/rf` and `/rf help`. When adding new commands, update both
+`Config.lua handleSlash` and the help block in the same function. Keep flags
+short and mnemonic.
+
+## Options panel (Options.lua)
+
+- `/rf` and `/rf options` open RageForge's own standalone movable window. This is the
+  reliable settings path. We may still call legacy `InterfaceOptions_AddCategory`
+  when available, but do not depend on the Blizzard AddOns list surfacing the
+  category on Anniversary clients.
+- Anniversary 2.5.5 does **not** have the modern Dragonflight
+  `Settings.RegisterAddOnCategory` API. Don't use it.
+- All controls write directly to `ns.Config.db` and call `RageBar:ApplyConfig()`
+  on change for live preview. No Apply button.
+- The settings window includes creator bio/social links. Keep them compact and
+  informational; WoW Classic cannot reliably open external URLs, so display
+  copyable/plain text rather than trying to launch a browser.
+- `panel.default` deep-copies `ns.Config.defaults` back into `ns.Config.db`
+  and calls `panel.refresh()`. The Blizzard Defaults button is the supported
+  reset path.
+- Lua 5.1 in WoW does NOT support `\u{XXXX}` escapes (added in 5.3). Encode
+  multibyte glyphs as raw UTF-8 byte escapes (e.g. middle dot \194\183, em-dash
+  \226\128\148) or stick to ASCII.
+- New settings? Add a default to `Config.defaults`, expose a control in
+  `Options:Build()`, and (if it changes bar geometry) note that a /reload is
+  required.
+
+## Testing without WoW
+
+You can't run WoW Lua outside the client, so:
+
+- After significant changes, install with `.\install.ps1 -Symlink` once and
+  use `/reload` in game to test live.
+- For rage-bar changes you can adjust `cfg.tacticalMasteryRetained` and
+  visually inspect ghost line / zone transitions while standing still.
+
+## Publishing
+
+- GitHub repo should be public as `SommerChase/rageforge`.
+- Use `package.ps1` for CurseForge/GitHub release zips. The archive must contain
+  a top-level `RageForge/` folder, not loose addon files.
+- Keep `LICENSE`, `CHANGELOG.md`, and README social/bio section current.
+- The release zip and the GitHub repo bundle `RageForge/Fonts/Prototype.ttf`
+  together with `RageForge/Fonts/Prototype.txt`. The `.txt` file is the font
+  author's readme and is required for redistribution. Never ship the .ttf
+  without the .txt.
+
+## Style
+
+- Keep comments to *why* / *invariants*, not narration. The team reads code
+  for what it does; comments earn their place by encoding intent or warning.
+- No emoji in code or chat output. Print prefix is the addon name in red.
+- Function names are PascalCase for module methods (`Bar:Update`), camelCase
+  for locals.
+- Two-space indent? **No** — keep four-space, that's the Blizzard / Classic
+  addon norm and matches existing files.
+
+## Known gotchas
+
+- Anniversary client may show "Out of Date" if Blizzard bumps the Interface
+  number mid-phase. Tell the user to either toggle the AddOns screen option
+  or bump `## Interface:` in the TOC.
+- Frame anchor strata: don't use `BACKGROUND` for anything that should be
+  visible above world UI; `ARTWORK`/`OVERLAY` are correct for the bar.
+- `RegisterEvent("UNIT_POWER_UPDATE")` payload is `(unit, "RAGE")` — string,
+  not numeric power type.
