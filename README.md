@@ -1,17 +1,15 @@
-<p align="center">
-  <img src="docs/branding/logo.png" alt="RageForge logo" width="220">
-</p>
+![RageForge banner](docs/branding/banner.png)
 
 <h1 align="center">RageForge</h1>
 
 <p align="center">
-  A smart rage display for stance-dancing TBC warriors on the WoW Classic
-  Anniversary realms. Built for PvP-first decision making.
+  <em>A smart rage display for stance-dancing TBC warriors on the WoW Classic
+  Anniversary realms. Built for PvP-first decision making.</em>
 </p>
 
 <p align="center">
-  The default rage bar tells you a number. RageForge tells you the <em>cost</em>
-  of your next stance dance, at a glance.
+  The default rage bar tells you a number. RageForge tells you the
+  <strong>cost</strong> of your next stance dance, at a glance.
 </p>
 
 ## Screenshots
@@ -253,7 +251,9 @@ rageforge/
 |   +-- RageBar.lua      the curved bar, zones, ghost line, ticks, glow
 |   +-- Options.lua      standalone /rf settings window
 +-- docs/
-|   +-- branding/        logo / icon assets for README, GitHub, CurseForge
+|   +-- branding/
+|   |   +-- banner.png   2:1 hero banner; GitHub social preview, README header
+|   |   +-- logo.png     1:1 square icon; CurseForge thumbnail, app/avatar
 |   +-- screenshots/     in-game screenshots referenced from this README
 +-- .cursor/rules/       Cursor IDE rules for working on this addon
 ```
