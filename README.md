@@ -8,16 +8,23 @@ your next stance dance, at a glance.
 
 ## Screenshots
 
-### In combat — the money shot
+### Mid-fight — reading the dump hint at a glance
 
-![RageForge in combat at 100 rage with dump hint and Battle Shout countdown](docs/screenshots/02-bar-in-combat.png)
+![RageForge mid-fight at 64 rage with -39 dump hint and ghost line at retained rage](docs/screenshots/03-bar-mid-combat.png)
 
-*Mid-fight at 100 rage. The bar runs through the full warrior palette —
-emerald (free dance) -> gold -> molten orange -> blood red (heavy loss). The
-**`-75`** label and the ghost line on the left edge show exactly what a stance
-dance would cost right now: drop from 100 to 25. Below the bar, the Battle
-Shout reminder shows a live 49s countdown — it'll start flashing once the
-buff drops under 30 seconds.*
+*A realistic mid-combat read: 64 rage on the bar, **`-39`** ghost label and
+ghost line on the left at the 25-rage retained mark. That tells you instantly
+that stance-dancing right now costs 39 rage. The fill colors shift through
+green (free) into gold and orange as the cost climbs.*
+
+### Rage cap — the full color spectrum
+
+![RageForge in combat at 100 rage with -75 dump hint and Battle Shout countdown](docs/screenshots/02-bar-in-combat.png)
+
+*Capped at 100 rage. The full warrior palette is visible at once: emerald
+(free dance) -> gold -> molten orange -> blood red (heavy loss). The `-75`
+hint says you'd lose 75 rage if you danced now. The Battle Shout reminder
+shows a live 49s countdown and starts flashing under 30 seconds.*
 
 ### Idle — the bar at 0 rage
 
