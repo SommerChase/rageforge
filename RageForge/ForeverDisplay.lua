@@ -8,8 +8,10 @@
 --   secret) UnitPower through SetValue. Orientation VERTICAL so fill rises
 --   up the curve as rage grows (no sideways sweep). Solid SoftFill + heavy
 --   overlap + disabled texel snapping removes horizontal seams. SoftTrackCurve
---   is the empty track; Iron/Bloodforged/Warlord frames (closed end caps)
---   mask residual edge jaggies. No inner highlight strip — the fill stays a
+--   is the empty track. Iron/Bloodforged/Warlord frames are a dark body plus
+--   a thin accent. The outline closes on the top of the top segment and the
+--   bottom of the bottom segment (no separate cap slabs). No inner highlight
+--   strip — the fill stays a
 --   solid gradient. SetValue uses ExponentialEaseOut when the client has it
 --   (secret-safe). Clients without that enum lerp one shared rage out of combat.
 

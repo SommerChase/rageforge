@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.3
+
+- Frame rails are a dark body again, with the original accent color (orange,
+  gold, or steel) only as a thin line. That line is thick enough to stay
+  continuous in game, about 2 screen pixels. It is not brighter.
+- Removed the separate top and bottom cap pieces. The same border closes
+  along the top edge of the top segment and the bottom edge of the bottom
+  segment, so the outline matches the bar's width and angle.
+
 ## 0.13.2
 
 - Frame trim (Iron, Bloodforged, Warlord) is a continuous ~2 screen-pixel
