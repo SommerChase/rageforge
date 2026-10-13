@@ -71,11 +71,12 @@ addon answers that question without you doing math.
 - **Left-side decision hints** — the retained-rage notch, ghost line, and
   `-X` dump hint live on the left side of the bar, keeping the right side
   reserved for threshold tick labels.
-- **Stance icon rail** — cropped Battle / Defensive / Berserker stance icons
-  sit in a tight stack touching the bar's left edge. Icons are square-cropped
-  and rotated so the spell icon's top points left; inactive stances are only
-  alpha-dimmed, not color-tinted or desaturated. The active stance uses
-  Blizzard's action-button border art as a gold outline.
+- **Stance icon rail** — only **learned** stances from the stance bar
+  (`GetNumShapeshiftForms` / `GetShapeshiftFormInfo`). Defensive / Berserker
+  appear when unlocked (no hardcoded level checks); the rail re-packs with no
+  gaps and refreshes on learn/level events. Icons are square-cropped and
+  rotated; inactive stances are alpha-dimmed only. Active stance uses
+  Blizzard's action-button border as a gold outline.
 - **Battle Shout reminder** — a Battle Shout icon appears at the bottom-left
   of the rage bar when the buff is missing or has less than 30 seconds
   remaining, then flashes until refreshed. If the buff is active but expiring,
@@ -87,11 +88,10 @@ addon answers that question without you doing math.
 - **No background chrome.** When the bar is locked, nothing exists on
   screen except the bar, ticks, and labels. When unlocked, the "RAGE"
   label shifts to "RAGE \194\183 drag" in light blue as a subtle drag cue.
-- **In-game settings window** via `/rf options`. Lock, scale, Tactical
-  Mastery rank, display toggles, stance icons, and font size. Live preview -
-  changes apply as you click. RageForge still attempts Blizzard AddOns-tab
-  registration when the client supports it, but `/rf options` is the reliable
-  path.
+- **Options > AddOns** registration: Forever uses the modern Settings API;
+  TBC uses `InterfaceOptions_AddCategory`. `/rf` opens that category. Forever
+  also gets an Addon Compartment entry. Style radios (Ribbon / Blade / Classic)
+  rebuild the bar live; a Reload UI button sits beside them.
 
 - **Color-coded stance-dance economy zones**, dynamic to your Tactical
   Mastery rank:
