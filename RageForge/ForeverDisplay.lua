@@ -24,13 +24,15 @@ local TEX_FRAME = {
     iron = MEDIA .. "FrameIron",
     bloodforged = MEDIA .. "FrameBloodforged",
     warlord = MEDIA .. "FrameWarlord",
+    ember = MEDIA .. "FrameEmber",
+    filigree = MEDIA .. "FrameFiligree",
 }
 
 -- Authored texture metrics (blade curve; t=0 at bottom of TGA).
-local TEX_W, TEX_H = 128, 512
-local TEX_PAD = 20
+local TEX_W, TEX_H = 256, 512
+local TEX_PAD = 24
 local TEX_USABLE = TEX_H - 2 * TEX_PAD
-local TEX_CX = 72
+local TEX_CX = 128
 local TEX_AUTHOR_SCALE = TEX_USABLE / 290
 local TEX_AMP = 22 * TEX_AUTHOR_SCALE
 local TEX_BW = 16 * TEX_AUTHOR_SCALE
@@ -191,9 +193,11 @@ end
 
 local function glowColorsForStyle(key)
     -- secret-safe baked tints; intensity comes from StatusBar fill amount
-    if key == "bloodforged" then
-        -- Blackrock fold-in: molten ember on obsidian iron
+    if key == "bloodforged" or key == "ember" then
+        -- Blackrock / molten crescent: ember on the inner edge
         return 1.0, 0.28, 0.06, 0.95
+    elseif key == "filigree" then
+        return 1.0, 0.82, 0.35, 0.80
     elseif key == "warlord" then
         return 0.85, 0.65, 0.35, 0.70  -- class-tan / gold
     elseif key == "iron" then

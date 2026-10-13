@@ -33,12 +33,14 @@ local TEX_FRAME = {
     iron = MEDIA .. "FrameIron",
     bloodforged = MEDIA .. "FrameBloodforged",
     warlord = MEDIA .. "FrameWarlord",
+    ember = MEDIA .. "FrameEmber",
+    filigree = MEDIA .. "FrameFiligree",
 }
 -- Authored SoftTrackCurve / Frame* metrics (blade curve; t=0 at TGA bottom).
-local TEX_W, TEX_H = 128, 512
-local TEX_PAD = 20
+local TEX_W, TEX_H = 256, 512
+local TEX_PAD = 24
 local TEX_USABLE = TEX_H - 2 * TEX_PAD
-local TEX_CX = 72
+local TEX_CX = 128
 local TEX_AUTHOR_SCALE = TEX_USABLE / 290
 local TEX_AMP = 22 * TEX_AUTHOR_SCALE
 local TEX_BW = 16 * TEX_AUTHOR_SCALE

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.0
+
+- **Thin metal frames:** Iron, Bloodforged, and Warlord stay selectable (plus
+  None). Outlines are thinner, and the top/bottom caps span exactly the outer
+  rail width so they close the curve instead of sticking out past it.
+- **Illustrated frames:** `Ember` (molten crescent) and `Filigree` (gold
+  scrollwork crescent), original art in the spirit of retail spell-proc
+  overlays. Not Blizzard textures. `/rf frame ember|filigree`.
+
 ## 0.12.0
 
 - **Closed frame caps** at top and bottom (forged end plates); rails no longer open.

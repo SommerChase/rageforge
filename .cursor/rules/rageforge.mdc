@@ -69,13 +69,11 @@ rageforge/
   plain `SetMinMaxValues(low, high)` and secret `SetValue(UnitPower)`, plus
   a single `Media/SoftTrackCurve` background. Do not reintroduce a straight
   StatusBar fallback. Dump-hint `-X` math still hides while rage is secret.
-- Frame overlays (`Media/FrameIron`, `FrameBloodforged`, `FrameWarlord`) are
-  optional closed-cap warrior rims via `cfg.frameStyle`
-  (`none` / `iron` / `bloodforged` / `warlord`, default **iron**).
-  Bloodforged = matte/obsidian black iron + molten red-orange ember (Blackrock
-  fold-in). Warlord = dark iron + gold + class-tan. Forever fill uses dense
-  VERTICAL StatusBars + solid SoftFill (no sideways sweep / no seam darkening).
-  Authored for the blade parabola; placement scales to live geometry.
+- Frame overlays via `cfg.frameStyle`: thin metal `iron` / `bloodforged` /
+  `warlord` (default **iron**), illustrated `ember` / `filigree`, or `none`.
+  Metal caps match the outer rail width. Illustrated frames are original
+  proc-style crescents (do not ship Blizzard SpellActivationOverlay art).
+  Forever fill uses dense VERTICAL StatusBars + solid SoftFill.
   `FRAME_STYLES[k].clearance` pushes stance / Battle Shout icons clear of the rim.
 - Bar styles live in `ns.Config.STYLES` (`classic` / `ribbon` / `blade`).
   Default for new installs is **blade**. Existing SavedVariables keep their
