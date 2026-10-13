@@ -235,7 +235,9 @@ function FD:Build(parent, width, height, anchorX, anchorY)
     local amp = (style and style.curveAmplitude) or cfg.barCurveAmplitude or 16
     local dir = cfg.barCurveDirection or -1
     local stroke = (style and style.barWidth) or width
-    local retained = cfg.tacticalMasteryRetained or 25
+    local retained = (ns.Config.GetRetainedRage and ns.Config:GetRetainedRage())
+        or cfg.tacticalMasteryRetained
+        or 0
     local zones = cfg.zones
 
     trackTex = parent:CreateTexture(nil, "BACKGROUND", nil, 0)
@@ -429,7 +431,9 @@ function FD:RecolorFromConfig()
         return
     end
     local cfg = ns.Config.db
-    local retained = cfg.tacticalMasteryRetained or 25
+    local retained = (ns.Config.GetRetainedRage and ns.Config:GetRetainedRage())
+        or cfg.tacticalMasteryRetained
+        or 0
     local zones = cfg.zones
     for _, bar in ipairs(segments) do
         local r, g, b, a = zoneColorForRage(bar._midRage, retained, zones)
@@ -446,6 +450,20 @@ function FD:RecolorFromConfig()
         ghostGate:SetMinMaxValues(retained, retained + 0.05)
         if ghostGate.SetStatusBarColor then
             ghostGate:SetStatusBarColor(gc[1], gc[2], gc[3], gc[4] or 0.9)
+        end
+        -- The notch is placed on the curve at retained rage. Recolor runs
+        -- when talents load after the first build, so move it too.
+        if parentFrame and geom.height and geom.height > 0 then
+            local style = ns.Config.GetStyle and ns.Config:GetStyle() or nil
+            local amp = (style and style.curveAmplitude) or cfg.barCurveAmplitude or 16
+            local dir = cfg.barCurveDirection or -1
+            local stroke = (style and style.barWidth) or geom.width or cfg.barWidth or 16
+            local frac = retained / 100
+            local xOff = curveOffset(frac, amp, dir)
+            local leftEdgeX = (geom.anchorX or 0) + xOff - stroke * 0.5
+            local yPos = (geom.anchorY or 0) + frac * geom.height
+            ghostGate:ClearAllPoints()
+            ghostGate:SetPoint("CENTER", parentFrame, "BOTTOMLEFT", leftEdgeX, yPos)
         end
         ghostGate:Show()
     elseif ghostGate then

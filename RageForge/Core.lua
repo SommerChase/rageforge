@@ -39,6 +39,10 @@ local CORE_EVENTS = {
     "LEARNED_SPELL_IN_TAB",          -- TBC / Classic
     "LEARNED_SPELL_IN_SKILL_LINE",   -- Forever / Mainline (11.0+)
     "PLAYER_LEVEL_UP",
+    "CHARACTER_POINTS_CHANGED",   -- TBC talent spends
+    "PLAYER_TALENT_UPDATE",       -- retail / Forever talent spends
+    "TRAIT_CONFIG_UPDATED",       -- C_Traits config commit
+    "ACTIVE_TALENT_GROUP_CHANGED",
     "PLAYER_REGEN_DISABLED",
     "PLAYER_REGEN_ENABLED",
 }
@@ -56,6 +60,26 @@ local function isStanceLearnEvent(event)
         or event == "PLAYER_LEVEL_UP"
 end
 
+local function isTalentEvent(event)
+    return event == "CHARACTER_POINTS_CHANGED"
+        or event == "PLAYER_TALENT_UPDATE"
+        or event == "TRAIT_CONFIG_UPDATED"
+        or event == "ACTIVE_TALENT_GROUP_CHANGED"
+        or event == "SPELLS_CHANGED"
+        or event == "PLAYER_LEVEL_UP"
+        or event == "LEARNED_SPELL_IN_TAB"
+        or event == "LEARNED_SPELL_IN_SKILL_LINE"
+end
+
+local function refreshRetainedRage()
+    if ns.Compat and ns.Compat.InvalidateRetainedRage then
+        ns.Compat:InvalidateRetainedRage()
+    end
+    if ns.RageBar and ns.RageBar.ApplyConfig then
+        ns.RageBar:ApplyConfig()
+    end
+end
+
 f:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loaded = ...
@@ -71,6 +95,11 @@ f:SetScript("OnEvent", function(_, event, ...)
         end
 
     elseif event == "PLAYER_LOGIN" then
+        -- Talents may already be readable. Drop any cache from early events
+        -- so the first build queries the client.
+        if ns.Compat and ns.Compat.InvalidateRetainedRage then
+            ns.Compat:InvalidateRetainedRage()
+        end
         -- Build UI once the player frame exists.
         ns.RageBar:Build()
         if ns.Options and ns.Options.Build then
@@ -83,6 +112,8 @@ f:SetScript("OnEvent", function(_, event, ...)
         if ns.RageBar.UpdateAuras then ns.RageBar:UpdateAuras() end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Talent data is often ready only after the player is in the world.
+        refreshRetainedRage()
         -- Force a refresh on zone changes / login completion.
         ns.RageBar:Update()
         if ns.RageBar.UpdateAuras then ns.RageBar:UpdateAuras() end
@@ -115,10 +146,13 @@ f:SetScript("OnEvent", function(_, event, ...)
             ns.RageBar:UpdateAuras()
         end
 
-    elseif isStanceLearnEvent(event) then
+    elseif isStanceLearnEvent(event) or isTalentEvent(event) then
+        if isTalentEvent(event) then
+            refreshRetainedRage()
+        end
         -- Stance rail shows only learned forms; refresh as soon as a stance
         -- quest/spell unlocks so Defensive/Berserker appear without /reload.
-        if ns.RageBar and ns.RageBar.UpdateStance then
+        if isStanceLearnEvent(event) and ns.RageBar and ns.RageBar.UpdateStance then
             ns.RageBar:UpdateStance()
         end
 

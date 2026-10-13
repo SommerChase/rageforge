@@ -364,25 +364,74 @@ function Opt:Build()
     tmHelp:SetPoint("TOPLEFT", h2, "BOTTOMLEFT", 0, -6)
     tmHelp:SetWidth(CONTENT_WIDTH - 24)
     tmHelp:SetJustifyH("LEFT")
-    tmHelp:SetText("Tactical Mastery rank \194\183 the rage retained on stance change. " ..
-        "Drives the ghost line, dump hint, and zone colors.")
 
-    local tm0 = makeRadio(content, "0/5  (0 retained)",
-        function() return cfg.tacticalMasteryRetained end,
-        function(v) cfg.tacticalMasteryRetained = v end,
-        0, "tm")
-    tm0:SetPoint("TOPLEFT", tmHelp, "BOTTOMLEFT", 0, -8)
+    local tmAuto
+    local function refreshTmControls()
+        if tmHelp._refresh then tmHelp._refresh() end
+        if tmAuto and tmAuto._refresh then tmAuto._refresh() end
+        for _, sibling in ipairs(radioGroups.tm or {}) do
+            if sibling._refresh then sibling._refresh() end
+        end
+    end
 
-    local tm3 = makeRadio(content, "3/5  (15 retained)",
-        function() return cfg.tacticalMasteryRetained end,
-        function(v) cfg.tacticalMasteryRetained = v end,
-        15, "tm")
+    local function tmHelpText()
+        local manual = cfg.tacticalMasteryRetained or 0
+        local autoOn = cfg.tacticalMasteryAuto ~= false
+        local detected
+        if ns.Compat and ns.Compat.GetRetainedRage then
+            detected = ns.Compat.GetRetainedRage()
+        end
+        local detectedText = (type(detected) == "number") and tostring(detected) or "not reported yet"
+        if autoOn then
+            return "Detect from talents is on (" .. detectedText .. " rage retained). " ..
+                "Forever: 10 at level 14, plus 3 per Improved Tactical Mastery rank (max 25). " ..
+                "TBC: 5 per Tactical Mastery rank (max 25). Pick a number below to override."
+        end
+        return "Manual override: " .. tostring(manual) .. " rage retained. " ..
+            "Check Detect from talents to read the rank again. Forever 3/5 is 19; TBC 3/5 is 15."
+    end
+
+    tmHelp._refresh = function()
+        tmHelp:SetText(tmHelpText())
+    end
+    tmHelp._refresh()
+    table.insert(controls, tmHelp)
+
+    tmAuto = makeCheckbox(content, "Detect from talents",
+        function() return cfg.tacticalMasteryAuto ~= false end,
+        function(v)
+            cfg.tacticalMasteryAuto = v and true or false
+            if ns.Compat and ns.Compat.InvalidateRetainedRage then
+                ns.Compat:InvalidateRetainedRage()
+            end
+            refreshTmControls()
+        end,
+        "Reads Improved Tactical Mastery or Tactical Mastery from this client's talent API. If the client does not report a rank, the manual value is used.")
+    tmAuto:SetPoint("TOPLEFT", tmHelp, "BOTTOMLEFT", -4, -6)
+
+    local function tmManualGetter()
+        if cfg.tacticalMasteryAuto ~= false then
+            return nil
+        end
+        return cfg.tacticalMasteryRetained
+    end
+
+    local function tmManualSetter(v)
+        cfg.tacticalMasteryAuto = false
+        cfg.tacticalMasteryRetained = v
+        refreshTmControls()
+    end
+
+    local tm0 = makeRadio(content, "0 retained",
+        tmManualGetter, tmManualSetter, 0, "tm")
+    tm0:SetPoint("TOPLEFT", tmAuto, "BOTTOMLEFT", 4, -4)
+
+    local tm3 = makeRadio(content, "15 retained",
+        tmManualGetter, tmManualSetter, 15, "tm")
     tm3:SetPoint("LEFT", tm0, "RIGHT", 130, 0)
 
-    local tm5 = makeRadio(content, "5/5  (25 retained)",
-        function() return cfg.tacticalMasteryRetained end,
-        function(v) cfg.tacticalMasteryRetained = v end,
-        25, "tm")
+    local tm5 = makeRadio(content, "25 retained",
+        tmManualGetter, tmManualSetter, 25, "tm")
     tm5:SetPoint("LEFT", tm3, "RIGHT", 130, 0)
 
     -- ===== Bar Style =====
@@ -570,7 +619,7 @@ function Opt:Build()
     footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
     footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    local version = "0.13.7"
+    local version = "0.14.0"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then

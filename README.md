@@ -189,9 +189,18 @@ One zip, one `RageForge/` folder, multiple TOC files:
 | `RageForge.toc` | unsuffixed fallback | `20506` |
 
 When uploading with the BigWigs packager, detect both flavors from the TOC
-Interface lines (or pass `-g bcc,forever`). Forever's Interface number is
+Interface lines (or pass `-g bcc,forever`). `.pkgmeta` sets
+`enable-toc-creation: no` so the packager keeps these hand-written files
+(Forever has to load `ForeverDisplay.lua`). Forever's Interface number is
 sourced from the Warcraft Wiki Forever Beta row and **may change at launch
 (Nov 4 2026)** — confirm with `/dump select(4, GetBuildInfo())`.
+
+`package.ps1` builds the same top-level `RageForge/` zip locally
+(`dist/RageForge-v<version>.zip`). `.github/workflows/release.yml` runs
+[BigWigsMods/packager](https://github.com/BigWigsMods/packager) on a tag
+push. Before the first CurseForge upload, replace `## X-Curse-Project-ID: 0`
+in every TOC with the real project id and add a repository secret named
+`CF_API_KEY`.
 
 ## In-game usage
 
@@ -206,9 +215,11 @@ For power users / scripts, every setting is also a slash command:
 ```
 /rf options      open the RageForge settings window
 /rf              open the RageForge settings window
-/rf tm 5         set Tactical Mastery to 5/5 (25 rage retained on dance)
-/rf tm 3         set Tactical Mastery to 3/5 (15 rage retained)
-/rf tm 0         no Tactical Mastery (0 rage retained)
+/rf tm auto      detect retained rage from talents (default)
+/rf tm 5         manual override: TBC 5/5 (25 rage retained)
+/rf tm 3         manual override: TBC 3/5 (15 rage retained)
+/rf tm 0         manual override: 0 rage retained
+/rf tm 19        manual override: any 0-25 (Forever 3/5 is 19)
 /rf lock         toggle lock; unlocked = drag to move
 /rf scale 1.0    set UI scale (0.5 .. 2.0)
 /rf reset        reset position to default
@@ -221,14 +232,23 @@ For power users / scripts, every setting is also a slash command:
 /rf status       client / secret-value diagnostics (Forever)
 ```
 
-The most important command is `/rf tm <0|3|5>`. Everything else is cosmetic;
-this one controls the math.
+`/rf tm auto` is the default. A number turns detection off and sets the
+manual retained rage. `3` and `5` are the old TBC rank shortcuts (15 and 25).
+Any other number from 0 to 25 is used as-is, which is how you pin a Forever
+mid-rank such as 19.
 
 ## How the math works
 
-Stance change in TBC drops your rage to `min(currentRage, retainedRage)`,
-where `retainedRage` is determined by your Tactical Mastery rank
-(0 / 15 / 25 for 0/5, 3/5, 5/5 respectively).
+A stance change drops rage to `min(currentRage, retainedRage)`.
+
+| Client | Retained rage |
+| --- | --- |
+| TBC Anniversary | 5 per rank of Tactical Mastery. 0/5 = 0, 3/5 = 15, 5/5 = 25. No baseline. |
+| WoW Forever beta 1.60.1 | 10 from the level-14 Tactical Mastery passive, plus 3 per rank of Improved Tactical Mastery. 0/5 = 10 (once learned), 3/5 = 19, 5/5 = 25. |
+
+RageForge reads that rank when it can (`GetTalentInfo` on TBC, `C_Traits` on
+Forever) and falls back to the manual value when the client does not report
+one. Sources and the other warrior checks are in the next section.
 
 So the value of a stance dance is:
 
@@ -238,6 +258,21 @@ rage_lost = max(0, currentRage - retainedRage)
 
 The ghost line is drawn at `min(currentRage, retainedRage)`. The fill above
 that line is, visually, "rage you're about to throw away if you dance now."
+
+## Forever beta 1.60.1 vs TBC
+
+Checked against Wowhead Forever (spell pages and the warrior beta notes),
+Blizzard's class deep dive, and the Forever talent listings those pages
+cite. Beta tooltips can still move before launch.
+
+| Check | TBC Anniversary | WoW Forever beta | RageForge |
+| --- | --- | --- | --- |
+| Rage kept on a stance change | Tactical Mastery, 5 per rank, 5/5 = 25. Nothing is kept at 0/5. | Baseline passive [Tactical Mastery](https://www.wowhead.com/forever/spell=1310185/tactical-mastery) (level 14) keeps 10. The tooltip shows 25 with the talent and 10 without. [Improved Tactical Mastery](https://www.wowhead.com/forever/spell=12295/improved-tactical-mastery) adds 3/6/9/12/15 (trait 135485). Blizzard: each point adds 3, maximum 25 ([deep dive](https://www.wowhead.com/forever/blue-tracker/news/us/world-of-warcraft-forever-class-deep-dives-priest-and-warrior-world-of-warcraft-24301514)). | Auto-detect. Manual 0/15/25 override stays. |
+| Stances | Battle (level 1), Defensive (level 10 quest), Berserker (level 30 quest, The Affray). | Same three. [Battle](https://www.wowhead.com/forever/spell=2457/battle-stance) level 1. [Defensive](https://www.wowhead.com/forever/spell=71/defensive-stance) level 10, quest. [Berserker](https://www.wowhead.com/forever/spell=2458/berserker-stance) level 30, quest. No fourth stance. | Icons come from the stance bar (`GetNumShapeshiftForms`). No level gate in code. |
+| Stance swap | Instant, 1 second cooldown, not on the global cooldown. | Same on all three Wowhead Forever stance pages: cooldown 1 second, GCD 0. | No stance-cooldown timer. The bar only answers "what rage survives the swap." |
+| Rage cap and decay | Cap 100 unless a talent raises it. Rage decays out of combat. | Cap stays 100. An earlier Boundless Rage talent (+30 max, [spell 1310236](https://www.wowhead.com/forever/spell=1310236/boundless-rage)) was removed in a later beta build ([Wowhead beta notes](https://www.wowhead.com/forever/news/warrior-updates-in-todays-wow-forever-beta-build-383230)). Decay still exists. [Lingering Rage](https://www.wowhead.com/forever/news/warrior-updates-in-todays-wow-forever-beta-build-383230) delays when decay starts (2/4/6/8/10 sec). Anger Management still cuts out-of-combat loss and adds in-combat regen. Neither changes stance-change retention. | The bar is 0–100. Those talents are not folded into retained rage. |
+| Battle Shout | 2 minutes. Ranks scale attack power. | [Rank 1](https://www.wowhead.com/forever/spell=6673/battle-shout) and [rank 7](https://www.wowhead.com/forever/spell=25289/battle-shout) both last 3 minutes (10 rage). Attack power is lower than TBC and still marked as beta. Improved Battle Shout was removed. Booming Voice on Forever increases radius and cuts rage cost; it does not extend the duration. | If the aura duration is readable, that number is used. Otherwise Forever counts down 180 seconds and TBC counts down 120. |
+| Other stance-dance talents | No Stance Mastery. | No Stance Mastery and no Unrelenting Storm analogue. Focused Rage only reduces ability rage cost. Vanguard lets Charge be used in Defensive Stance. It is not a new stance. | Not tracked. They do not change the ghost line. |
 
 ## Roadmap
 
@@ -272,6 +307,7 @@ PvP):
 rageforge/
 +-- README.md                 this file
 +-- .pkgmeta                  CurseForge / BigWigs packager metadata
++-- .github/workflows/release.yml  tag push -> BigWigs packager -> CurseForge
 +-- install.ps1               copy / junction into Anniversary or Forever AddOns
 +-- package.ps1               build clean CurseForge/GitHub release zip
 +-- CHANGELOG.md              release notes

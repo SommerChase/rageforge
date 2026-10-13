@@ -903,7 +903,12 @@ function Bar:OnSpellcastSucceeded(unit, ...)
     end
 
     if matched then
-        local duration = (ns.Config and ns.Config.db and ns.Config.db.battleShoutDuration) or 120
+        local duration = 120
+        if ns.Compat and ns.Compat.BattleShoutFallbackSeconds then
+            duration = ns.Compat.BattleShoutFallbackSeconds()
+        elseif ns.Config and ns.Config.db and ns.Config.db.battleShoutDuration then
+            duration = ns.Config.db.battleShoutDuration
+        end
         battleShoutDurationStartedAt = GetTime()
         battleShoutLastDuration = duration
         battleShoutWasFound = true
@@ -963,7 +968,9 @@ end
 function Bar:Render()
     local cfg = ns.Config.db
     local zones = cfg.zones
-    local retained = cfg.tacticalMasteryRetained
+    local retained = (ns.Config.GetRetainedRage and ns.Config:GetRetainedRage())
+        or cfg.tacticalMasteryRetained
+        or 0
     local Compat = ns.Compat
 
     -- ForeverDisplay path: curved StatusBar segments own the fill. Dump-hint

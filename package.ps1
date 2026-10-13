@@ -1,3 +1,5 @@
+# Local release zip. Top-level folder inside the archive is RageForge/.
+# CurseForge tag uploads use .github/workflows/release.yml (BigWigs packager).
 param(
     [string]$Version
 )

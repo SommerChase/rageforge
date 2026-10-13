@@ -14,6 +14,8 @@ globals = {
   "InterfaceOptionsFrame",
   "Enum", "C_Spell", "C_SpellBook", "C_UnitAuras", "C_Secrets", "C_CurveUtil", "C_AddOns",
   "C_EventUtils",
+  "C_Traits", "C_ClassTalents",
+  "GetTalentInfo", "GetNumTalentTabs", "GetNumTalents",
   "issecretvalue", "canaccessvalue", "AbbreviateNumbers", "CreateColor",
   "Settings", "AddonCompartmentFrame", "CurveConstants",
   "RageForgeDB", "wipe",

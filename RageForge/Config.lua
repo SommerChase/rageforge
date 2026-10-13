@@ -44,10 +44,12 @@ C.STYLES = {
 }
 
 C.defaults = {
-    -- How much rage is retained on stance change.
-    -- Tactical Mastery: 0/5 = 0, 3/5 = 15, 5/5 = 25.
-    -- This is the linchpin of the whole addon. Get it right.
+    -- Manual rage retained on stance change. Used when auto-detect is off
+    -- or the client cannot report a rank. TBC 5/5 and Forever 5/5 are both
+    -- 25. The bar reads Config:GetRetainedRage(), never a hardcoded 25.
     tacticalMasteryRetained = 25,
+    -- Read the rank from GetTalentInfo / C_Traits when the client can.
+    tacticalMasteryAuto = true,
 
     -- Visual style: "classic" | "ribbon" | "blade"
     barStyle = "blade",
@@ -115,6 +117,9 @@ C.defaults = {
     showBattleShoutReminder = true,
     battleShoutWarnSeconds = 30,
     battleShoutIconSize = 32,
+    -- TBC fallback (2 min) when an aura duration is unreadable. Forever
+    -- uses 180 via Compat.BattleShoutFallbackSeconds and does not rewrite
+    -- this saved value.
     battleShoutDuration = 120,
 }
 
@@ -343,6 +348,32 @@ function C:Set(key, value)
     if ns.RageBar and ns.RageBar.ApplyConfig then ns.RageBar:ApplyConfig() end
 end
 
+-- Visuals call this. Auto uses the talent read when it returns a number;
+-- otherwise the manual slider value stands.
+function C:GetRetainedRage()
+    local db = self.db
+    if db and db.tacticalMasteryAuto ~= false then
+        local compat = ns.Compat
+        if compat and compat.GetRetainedRage then
+            local detected = compat.GetRetainedRage()
+            if type(detected) == "number" then
+                return detected
+            end
+        end
+    end
+    local manual = db and db.tacticalMasteryRetained
+    if type(manual) ~= "number" then
+        return 0
+    end
+    if manual < 0 then
+        return 0
+    end
+    if manual > 25 then
+        return 25
+    end
+    return manual
+end
+
 -- Print a styled chat message to the player.
 function C:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cffff5f3fRageForge|r " .. tostring(msg))
@@ -367,7 +398,8 @@ local function handleSlash(input)
         C:Print("commands:")
         C:Print("  /rf                   open the RageForge settings window")
         C:Print("  /rf options           open the RageForge settings window")
-        C:Print("  /rf tm <0|3|5>        set Tactical Mastery rank (rage retained on stance change)")
+        C:Print("  /rf tm auto           detect retained rage from talents")
+        C:Print("  /rf tm <0|3|5|n>     manual override (3=15, 5=25, or any 0-25)")
         C:Print("  /rf lock              lock/unlock the bar (drag to move when unlocked)")
         C:Print("  /rf scale <0.5-2.0>   set UI scale")
         C:Print("  /rf reset             reset position to default")
@@ -440,6 +472,13 @@ local function handleSlash(input)
             local secretRage = Compat.NeedsSecretSafeRageDisplay and Compat.NeedsSecretSafeRageDisplay()
             C:Print(("rage restricted right now: %s"):format(secretRage and "yes" or "no"))
         end
+        local detected = ns.Compat and ns.Compat.GetRetainedRage and ns.Compat.GetRetainedRage()
+        C:Print(("retained rage: %d (auto=%s, detected=%s, manual=%s)"):format(
+            C:GetRetainedRage(),
+            (C:Get("tacticalMasteryAuto") ~= false) and "yes" or "no",
+            (type(detected) == "number") and tostring(detected) or "unreadable",
+            tostring(C:Get("tacticalMasteryRetained"))
+        ))
         return
     end
 
@@ -453,16 +492,35 @@ local function handleSlash(input)
     end
 
     if cmd == "tm" then
-        local n = tonumber(rest)
-        if n == 0 then C:Set("tacticalMasteryRetained", 0)
-        elseif n == 3 then C:Set("tacticalMasteryRetained", 15)
-        elseif n == 5 then C:Set("tacticalMasteryRetained", 25)
-        elseif n then C:Set("tacticalMasteryRetained", math.max(0, math.min(25, n))) -- raw value too
-        else
-            C:Print("usage: /rf tm <0|3|5>  (or a raw rage number 0-25)")
+        if rest == "auto" or rest == "detect" then
+            if ns.Compat and ns.Compat.InvalidateRetainedRage then
+                ns.Compat:InvalidateRetainedRage()
+            end
+            C:Set("tacticalMasteryAuto", true)
+            local detected = ns.Compat and ns.Compat.GetRetainedRage and ns.Compat.GetRetainedRage()
+            if type(detected) == "number" then
+                C:Print(("Tactical Mastery: talents say %d rage retained"):format(C:GetRetainedRage()))
+            else
+                C:Print(("Tactical Mastery: talents not reported, using manual %d"):format(C:GetRetainedRage()))
+            end
             return
         end
-        C:Print(("Tactical Mastery retained rage: %d"):format(C:Get("tacticalMasteryRetained")))
+        local n = tonumber(rest)
+        local retained
+        if n == 0 then retained = 0
+        elseif n == 3 then retained = 15
+        elseif n == 5 then retained = 25
+        elseif n then retained = math.max(0, math.min(25, n))
+        end
+        if retained == nil then
+            C:Print("usage: /rf tm auto | <0|3|5> | <0-25>")
+            return
+        end
+        -- Manual numbers turn detection off. Set the flag first so the
+        -- ApplyConfig from Set() reads the override.
+        C.db.tacticalMasteryAuto = false
+        C:Set("tacticalMasteryRetained", retained)
+        C:Print(("Tactical Mastery retained rage: %d (manual)"):format(C:Get("tacticalMasteryRetained")))
         return
     end
 

@@ -11,6 +11,9 @@
 
 package-as: RageForge
 
+# Suffix TOCs are hand-written (Forever loads ForeverDisplay.lua).
+enable-toc-creation: no
+
 ignore:
   - docs
   - .cursor

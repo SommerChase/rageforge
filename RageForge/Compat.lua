@@ -103,6 +103,313 @@ function Compat.IsSpellKnown(spellId)
     return false
 end
 
+-- Retained rage on stance change.
+-- Forever beta (Wowhead spell 1310185, level 14): baseline 10. Improved
+-- Tactical Mastery (spell 12295) adds 3/6/9/12/15. Cap 25.
+-- TBC: Tactical Mastery is 5 per rank on spells 12295, 12676, 12677,
+-- 12678, 12679. No baseline. Cap 25.
+-- Returns nil when the client cannot be read so the manual override is used.
+-- A cached nil is intentional; InvalidateRetainedRage() retries.
+local FOREVER_TM_BASELINE_SPELL = 1310185
+local TM_TALENT_SPELL = 12295
+local TBC_TM_RANK_SPELLS = { 12295, 12676, 12677, 12678, 12679 }
+
+local retainedCache
+local retainedCacheValid = false
+
+local function onForeverClient()
+    return ns.ForeverDisplay ~= nil
+end
+
+local function tmKindFromName(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+    local key = name:lower()
+    if key == "improved tactical mastery" then
+        return "forever"
+    end
+    if key == "tactical mastery" then
+        return "tbc"
+    end
+    return nil
+end
+
+local function noteTalent(foundKind, foundRank, kind, rank)
+    if not kind then
+        return foundKind, foundRank
+    end
+    rank = tonumber(rank) or 0
+    if rank < 0 then
+        rank = 0
+    end
+    if foundKind == "forever" and kind ~= "forever" then
+        return foundKind, foundRank
+    end
+    if not foundKind or kind == "forever" or rank >= (foundRank or 0) then
+        return kind, rank
+    end
+    return foundKind, foundRank
+end
+
+local function traitSpellAndName(entryID, configID)
+    if not hasFn(C_Traits, "GetEntryInfo") then
+        return nil, nil
+    end
+    local info
+    local ok, first = pcall(C_Traits.GetEntryInfo, entryID)
+    if ok and type(first) == "table" then
+        info = first
+    elseif configID then
+        local ok2, second = pcall(C_Traits.GetEntryInfo, configID, entryID)
+        if ok2 and type(second) == "table" then
+            info = second
+        end
+    end
+    if not info or not hasFn(C_Traits, "GetDefinitionInfo") then
+        return nil, nil
+    end
+    local defID = info.definitionID
+    if not defID and type(info.definitionIDs) == "table" then
+        defID = info.definitionIDs[1]
+    end
+    if not defID then
+        return nil, nil
+    end
+    local okDef, def = pcall(C_Traits.GetDefinitionInfo, defID)
+    if not okDef or type(def) ~= "table" then
+        return nil, nil
+    end
+    local spellID = def.spellID or def.overriddenSpellID
+    if not spellID then
+        return nil, nil
+    end
+    return spellID, Compat.GetSpellName(spellID)
+end
+
+local function nodeRank(node)
+    if type(node) ~= "table" then
+        return nil
+    end
+    local rank = node.currentRank
+    if type(rank) ~= "number" then
+        rank = node.ranksPurchased
+    end
+    if type(rank) ~= "number" then
+        rank = node.activeRank
+    end
+    if type(rank) ~= "number" then
+        return nil
+    end
+    return rank
+end
+
+-- nil, nil when the API is missing or the tree is not loaded yet.
+-- kind nil and rank 0 means the tree loaded and this talent is untrained.
+local function scanTraitTalents()
+    if not hasFn(C_ClassTalents, "GetActiveConfigID") then
+        return nil, nil
+    end
+    if not hasFn(C_Traits, "GetConfigInfo")
+        or not hasFn(C_Traits, "GetTreeNodes")
+        or not hasFn(C_Traits, "GetNodeInfo") then
+        return nil, nil
+    end
+
+    local ok, kind, rank, saw = pcall(function()
+        local configID = C_ClassTalents.GetActiveConfigID()
+        if not configID then
+            return nil
+        end
+        local info = C_Traits.GetConfigInfo(configID)
+        local trees = info and info.treeIDs
+        if type(trees) ~= "table" then
+            return nil
+        end
+
+        local sawAny = false
+        local foundKind, foundRank
+        for _, treeID in pairs(trees) do
+            local nodes = C_Traits.GetTreeNodes(treeID)
+            if type(nodes) == "table" then
+                for _, nodeID in pairs(nodes) do
+                    local node = C_Traits.GetNodeInfo(configID, nodeID)
+                    if type(node) == "table" and type(node.entryIDs) == "table" then
+                        local purchased = nodeRank(node) or 0
+                        for _, entryID in pairs(node.entryIDs) do
+                            local spellID, name = traitSpellAndName(entryID, configID)
+                            if spellID or (type(name) == "string" and name ~= "") then
+                                sawAny = true
+                            end
+                            local entryKind = tmKindFromName(name)
+                            if spellID == TM_TALENT_SPELL then
+                                entryKind = onForeverClient() and "forever" or (entryKind or "tbc")
+                            end
+                            foundKind, foundRank = noteTalent(foundKind, foundRank, entryKind, purchased)
+                        end
+                    end
+                end
+            end
+        end
+
+        if not sawAny then
+            return nil
+        end
+        return foundKind, foundRank or 0, true
+    end)
+
+    if not ok or not saw then
+        return nil, nil
+    end
+    return kind, rank or 0
+end
+
+local function scanClassicTalents()
+    if type(GetNumTalentTabs) ~= "function"
+        or type(GetNumTalents) ~= "function"
+        or type(GetTalentInfo) ~= "function" then
+        return nil, nil
+    end
+
+    local ok, kind, rank, saw = pcall(function()
+        local tabs = GetNumTalentTabs()
+        if type(tabs) ~= "number" or tabs < 1 then
+            return nil
+        end
+        local sawAny = false
+        local foundKind, foundRank
+        for tab = 1, tabs do
+            local n = GetNumTalents(tab)
+            if type(n) ~= "number" then
+                n = 0
+            end
+            for i = 1, n do
+                local name, _, _, _, current = GetTalentInfo(tab, i)
+                if type(name) == "string" and name ~= "" then
+                    sawAny = true
+                    foundKind, foundRank = noteTalent(
+                        foundKind, foundRank, tmKindFromName(name), tonumber(current) or 0
+                    )
+                end
+            end
+        end
+        if not sawAny then
+            return nil
+        end
+        return foundKind, foundRank or 0, true
+    end)
+
+    if not ok or not saw then
+        return nil, nil
+    end
+    return kind, rank or 0
+end
+
+-- Locale-safe TBC probe. Forever reuses spell 12295 for every rank of the
+-- renamed talent, so this chain is TBC-only.
+local function tbcRankFromKnownSpells()
+    if onForeverClient() then
+        return nil
+    end
+    for rank = #TBC_TM_RANK_SPELLS, 1, -1 do
+        if Compat.IsSpellKnown(TBC_TM_RANK_SPELLS[rank]) then
+            return rank
+        end
+    end
+    return nil
+end
+
+local function computeRetainedRage()
+    local _, class = UnitClass("player")
+    if class ~= "WARRIOR" then
+        return nil
+    end
+
+    local traitKind, traitRank = scanTraitTalents()
+    local classicKind, classicRank = scanClassicTalents()
+    local kind, rank, readable
+    if traitRank ~= nil or traitKind ~= nil then
+        kind, rank, readable = traitKind, traitRank, true
+    elseif classicRank ~= nil or classicKind ~= nil then
+        kind, rank, readable = classicKind, classicRank, true
+    end
+
+    if onForeverClient() then
+        if not readable then
+            return nil
+        end
+        local bonus = 0
+        if kind then
+            bonus = (rank or 0) * 3
+        end
+        local baseline = 0
+        if Compat.IsSpellKnown(FOREVER_TM_BASELINE_SPELL) then
+            baseline = 10
+        end
+        local retained = baseline + bonus
+        if retained > 25 then
+            retained = 25
+        end
+        return retained
+    end
+
+    local spellRank = tbcRankFromKnownSpells()
+    if kind == "tbc" or kind == "forever" then
+        local fromTree = (rank or 0) * 5
+        if spellRank and (spellRank * 5) > fromTree then
+            fromTree = spellRank * 5
+        end
+        if fromTree > 25 then
+            fromTree = 25
+        end
+        return fromTree
+    end
+    if spellRank then
+        local fromSpells = spellRank * 5
+        if fromSpells > 25 then
+            fromSpells = 25
+        end
+        return fromSpells
+    end
+    -- Tree loaded, but the row was not the English name and no rank spell
+    -- was known. Leave the manual value in place (locale / partial data).
+    return nil
+end
+
+function Compat.InvalidateRetainedRage()
+    retainedCacheValid = false
+    retainedCache = nil
+end
+
+function Compat.GetRetainedRage()
+    if retainedCacheValid then
+        return retainedCache
+    end
+    local ok, value = pcall(computeRetainedRage)
+    if ok and type(value) == "number" then
+        retainedCache = value
+    else
+        retainedCache = nil
+    end
+    retainedCacheValid = true
+    return retainedCache
+end
+
+-- Aura duration wins when the client reports it. This is only the local
+-- countdown used when that duration is missing (secret auras, or a cast
+-- that has not appeared in the aura list yet).
+function Compat.BattleShoutFallbackSeconds()
+    if onForeverClient() then
+        return 180
+    end
+    local cfg = ns.Config and ns.Config.db
+    local saved = cfg and cfg.battleShoutDuration
+    if type(saved) == "number" and saved > 0 then
+        return saved
+    end
+    return 120
+end
+
 -- Returns a packed list of learned warrior stances from the stance bar.
 -- GetNumShapeshiftForms / GetShapeshiftFormInfo only expose slots the player
 -- currently has (Battle from character creation; Defensive / Berserker after

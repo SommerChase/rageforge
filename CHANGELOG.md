@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.14.0
+
+- Retained rage is read from talents when the client reports them. Forever
+  is 10 at level 14, plus 3 per rank of Improved Tactical Mastery (max 25).
+  TBC stays 5 per rank of Tactical Mastery. Detect is the default. The
+  manual value remains (`/rf tm`, or the 0 / 15 / 25 choices).
+- Forever Battle Shout fallback is 3 minutes when the aura duration cannot
+  be read. TBC stays 2 minutes. A reported aura duration still wins.
+- Release packaging: `.pkgmeta` keeps the hand-written TOCs
+  (`enable-toc-creation: no`). `package.ps1` still builds a local zip.
+  `.github/workflows/release.yml` runs the BigWigs packager on a tag push.
+  Set the `CF_API_KEY` secret and replace `X-Curse-Project-ID` in the TOCs
+  before the first CurseForge upload.
+
 ## 0.13.7
 
 - Reverted the 0.13.6 fill-edge change. Frame None and the rest of the bar

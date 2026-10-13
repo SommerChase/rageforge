@@ -91,12 +91,17 @@ rageforge/
 
 ## Stance-dance math (the linchpin)
 
-Tactical Mastery in TBC retains 5 rage per rank, max 25 at 5/5. On stance
-change rage drops to `min(currentRage, retainedRage)`. The user-configurable
-value `cfg.tacticalMasteryRetained` is the single source of truth — every
-visual decision (zones, ghost line, number color) routes through it.
+Tactical Mastery in TBC retains 5 rage per rank, max 25 at 5/5. On Forever
+beta 1.60.1 a baseline passive (spell 1310185, level 14) retains 10, and
+Improved Tactical Mastery (spell 12295) adds 3 per rank, still capping at 25.
+On stance change rage drops to `min(currentRage, retainedRage)`.
 
-**Never** hardcode `25`. Always read `ns.Config.db.tacticalMasteryRetained`.
+Visuals call `ns.Config:GetRetainedRage()`. When `cfg.tacticalMasteryAuto`
+is true and `ns.Compat.GetRetainedRage()` returns a number, that detected
+value is used. Otherwise the manual `cfg.tacticalMasteryRetained` stands.
+Selecting a manual radio or `/rf tm <n>` turns auto off.
+
+**Never** hardcode `25`. Always go through `GetRetainedRage()`.
 
 ## Visual conventions
 

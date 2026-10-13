@@ -2,10 +2,12 @@
 ## Title: RageForge
 ## Notes: Smart rage display for stance-dancing warriors. Curved bar, economy zones, ghost line, dump hint.
 ## Author: Chase Sommer
-## Version: 0.13.7
+## Version: 0.14.0
+## X-Curse-Project-ID: 0
 ## SavedVariables: RageForgeDB
 ## DefaultState: enabled
 
+# Replace X-Curse-Project-ID 0 with the CurseForge project id before tagging a release.
 # Fallback TOC (TBC Anniversary / Classic family when no suffix TOC matches).
 # Forever loads RageForge_Forever.toc / RageForge_Camelot.toc instead.
 Compat.lua
