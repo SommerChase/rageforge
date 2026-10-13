@@ -408,8 +408,9 @@ function Bar:Build()
     container._barCenterlineX = barCenterlineX
     container._barAnchorY = barAnchorY
 
-    -- Forever-only secret-safe StatusBar (straight fill). Classic TOC does
-    -- not load ForeverDisplay.lua, so this is a no-op on Anniversary.
+    -- Forever: curved StatusBar segment stack (secret-safe). Owns the fill
+    -- in and out of combat so the curve never collapses to a straight bar.
+    -- Classic Anniversary TOC does not load ForeverDisplay.lua.
     if ns.ForeverDisplay and ns.ForeverDisplay.Build then
         ns.ForeverDisplay:Build(
             container,
@@ -418,6 +419,8 @@ function Bar:Build()
             barCenterlineX,
             barAnchorY
         )
+        setSlicesShown(false)
+        ns.ForeverDisplay:SetSecretMode(true)
     end
 
     self:UpdateStance()
@@ -518,33 +521,27 @@ function Bar:Update()
     local powerUsable = (not Compat) or Compat.CanUseNumber(power)
     local maxUsable = (not Compat) or Compat.CanUseNumber(powerMax)
 
-    -- Forever / Midnight: primary power may be secret in combat. The curved
-    -- slice renderer needs comparisons; switch to ForeverDisplay StatusBar.
-    local wantSecret = Compat and Compat.NeedsSecretSafeRageDisplay and Compat.NeedsSecretSafeRageDisplay()
-    wantSecret = wantSecret or (Compat and Compat.hasSecrets and not powerUsable)
-
-    if wantSecret and ns.ForeverDisplay then
-        if not rageSecretMode then
-            rageSecretMode = true
-            setSlicesShown(false)
-            ns.ForeverDisplay:SetSecretMode(true)
-        end
+    -- ForeverDisplay owns the curved fill whenever it is loaded. Segment
+    -- StatusBars accept secret SetValue (wiki Secret_Values / BarValue aspect),
+    -- so combat and out-of-combat share one curved renderer.
+    if ns.ForeverDisplay and ns.ForeverDisplay.IsActive and ns.ForeverDisplay:IsActive() then
+        rageSecretMode = true
+        setSlicesShown(false)
         currentRage = power
         if maxUsable then
             if powerMax <= 0 then powerMax = 100 end
             maxRage = powerMax
+        elseif maxRage <= 0 then
+            maxRage = 100
+        end
+        if powerUsable then
+            lastAccessibleRage = power
         end
         ns.ForeverDisplay:Update(power, maxRage, rageType)
         return
     end
 
-    if rageSecretMode then
-        rageSecretMode = false
-        setSlicesShown(true)
-        if ns.ForeverDisplay then
-            ns.ForeverDisplay:SetSecretMode(false)
-        end
-    end
+    rageSecretMode = false
 
     if powerUsable then
         currentRage = power
@@ -768,16 +765,66 @@ function Bar:Render()
     local retained = cfg.tacticalMasteryRetained
     local Compat = ns.Compat
 
-    -- Forever secret mode: StatusBar owns the fill. Hide slice math, ghost
-    -- line, dump hint, and cap-glow comparisons -- they all need plain numbers.
-    if rageSecretMode then
-        if ns.ForeverDisplay and ns.ForeverDisplay.HideDecisionHints then
-            ns.ForeverDisplay:HideDecisionHints(ghostNotch, ghostLine, dumpHintFS, capGlow)
-        else
-            if ghostNotch then ghostNotch:Hide() end
-            if ghostLine then ghostLine:Hide() end
-            if dumpHintFS then dumpHintFS:Hide() end
-            if capGlow then capGlow:Hide() end
+    -- ForeverDisplay path: curved StatusBar segments own the fill. Dump-hint
+    -- math and Classic ghost textures still need plain numbers -- hide those
+    -- when rage is not usable; the Forever ghostGate StatusBar replaces the
+    -- notch via engine-side min/max compare.
+    if rageSecretMode or (ns.ForeverDisplay and ns.ForeverDisplay.IsActive and ns.ForeverDisplay:IsActive()) then
+        local powerReadable = (not Compat) or Compat.CanUseNumber(currentRage)
+        if (not powerReadable) or (Compat and Compat.hasSecrets and Compat.NeedsSecretSafeRageDisplay and Compat.NeedsSecretSafeRageDisplay()) then
+            if ns.ForeverDisplay and ns.ForeverDisplay.HideDecisionHints then
+                ns.ForeverDisplay:HideDecisionHints(ghostNotch, ghostLine, dumpHintFS, capGlow)
+            else
+                if ghostNotch then ghostNotch:Hide() end
+                if ghostLine then ghostLine:Hide() end
+                if dumpHintFS then dumpHintFS:Hide() end
+                if capGlow then capGlow:Hide() end
+            end
+        elseif powerReadable then
+            -- Out of combat on Forever: rage is plain -- show dump hint like Classic.
+            if cfg.showGhostLine and currentRage > retained then
+                local frac = retained / 100
+                local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
+                local leftEdgeX = container._barCenterlineX + xOff - cfg.barWidth * 0.5
+                local yPos = container._barAnchorY + frac * cfg.barHeight
+
+                ghostNotch:ClearAllPoints()
+                ghostNotch:SetPoint("CENTER", container, "BOTTOMLEFT", leftEdgeX, yPos)
+                ghostNotch:Show()
+
+                ghostLine:ClearAllPoints()
+                ghostLine:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX - 2, yPos)
+                ghostLine:Show()
+
+                local dumpAmount = math.floor(currentRage - retained + 0.5)
+                dumpHintFS:SetText(("-%d"):format(dumpAmount))
+                local r, g, b
+                if dumpAmount < 15 then
+                    r, g, b = 0.98, 0.78, 0.24
+                elseif dumpAmount < 30 then
+                    r, g, b = 1.00, 0.50, 0.16
+                else
+                    r, g, b = 0.92, 0.16, 0.12
+                end
+                dumpHintFS:SetTextColor(r, g, b, 1.0)
+                dumpHintFS:ClearAllPoints()
+                dumpHintFS:SetPoint("RIGHT", ghostLine, "LEFT", -3, 0)
+                dumpHintFS:Show()
+            else
+                ghostNotch:Hide()
+                ghostLine:Hide()
+                dumpHintFS:Hide()
+            end
+
+            if cfg.rageCapWarn and capGlow then
+                if currentRage >= maxRage - 5 then
+                    local pulse = 0.5 + 0.5 * math.sin(GetTime() * 6)
+                    capGlow:SetColorTexture(0.95, 0.78, 0.30, 0.30 + 0.40 * pulse)
+                    capGlow:Show()
+                else
+                    capGlow:Hide()
+                end
+            end
         end
 
         if numberFS and cfg.showNumber then
@@ -786,8 +833,12 @@ function Bar:Render()
             else
                 numberFS:SetText(currentRage)
             end
-            -- Zone text color needs a plain number; keep a neutral warrior tone.
-            numberFS:SetTextColor(0.98, 0.78, 0.24, 1)
+            if powerReadable then
+                local r, g, b = zoneColorForRage(currentRage, retained, zones)
+                numberFS:SetTextColor(r, g, b, 1)
+            else
+                numberFS:SetTextColor(0.98, 0.78, 0.24, 1)
+            end
         end
 
         if battleShoutFrame and battleShoutVisible then

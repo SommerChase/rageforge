@@ -11,7 +11,7 @@ globals = {
   "Enum", "C_Spell", "C_UnitAuras", "C_Secrets", "C_CurveUtil", "C_AddOns",
   "issecretvalue", "canaccessvalue", "AbbreviateNumbers", "CreateColor",
   "Settings", "AddonCompartmentFrame", "CurveConstants",
-  "RageForgeDB",
+  "RageForgeDB", "wipe",
   "SLASH_RAGEFORGE1", "SLASH_RAGEFORGE2",
 }
 read_globals = {

@@ -153,7 +153,7 @@ local function ensureWindow()
     if window then return end
 
     window = CreateFrame("Frame", "RageForgeOptionsWindow", UIParent)
-    window:SetSize(640, 720)
+    window:SetSize(640, 760)
     window:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     window:SetFrameStrata("DIALOG")
     window:SetMovable(true)
@@ -215,7 +215,7 @@ function Opt:Build()
     if registered then return true end
 
     panel = CreateFrame("Frame", "RageForgeOptionsPanel")
-    panel:SetSize(600, 680)
+    panel:SetSize(600, 720)
     panel.name = "RageForge"
 
     local cfg = ns.Config.db
@@ -285,11 +285,35 @@ function Opt:Build()
     -- ===== Display =====
     local h3 = makeHeader(panel, "Display", tm0, -4, -32)
 
-    local cbTicks = makeCheckbox(panel, "Threshold ticks (10 / 15 / 25 / 30 / 50 / 75)",
+    local styleHelp = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    styleHelp:SetPoint("TOPLEFT", h3, "BOTTOMLEFT", 0, -4)
+    styleHelp:SetWidth(540)
+    styleHelp:SetJustifyH("LEFT")
+    styleHelp:SetText("Bar style \194\183 geometry changes need |cffff5f3f/reload|r after switching.")
+
+    local styleClassic = makeRadio(panel, "Classic (thick)",
+        function() return cfg.barStyle or "ribbon" end,
+        function(v) if ns.Config.ApplyStyle then ns.Config:ApplyStyle(v) end end,
+        "classic", "barStyle")
+    styleClassic:SetPoint("TOPLEFT", styleHelp, "BOTTOMLEFT", 0, -6)
+
+    local styleRibbon = makeRadio(panel, "Ribbon (thin, default)",
+        function() return cfg.barStyle or "ribbon" end,
+        function(v) if ns.Config.ApplyStyle then ns.Config:ApplyStyle(v) end end,
+        "ribbon", "barStyle")
+    styleRibbon:SetPoint("LEFT", styleClassic, "RIGHT", 120, 0)
+
+    local styleBlade = makeRadio(panel, "Blade (medium)",
+        function() return cfg.barStyle or "ribbon" end,
+        function(v) if ns.Config.ApplyStyle then ns.Config:ApplyStyle(v) end end,
+        "blade", "barStyle")
+    styleBlade:SetPoint("LEFT", styleRibbon, "RIGHT", 150, 0)
+
+    local cbTicks = makeCheckbox(panel, "Threshold ticks",
         function() return cfg.showTicks end,
         function(v) cfg.showTicks = v end,
-        "Marks important rage breakpoints so you can read your bar at a glance.")
-    cbTicks:SetPoint("TOPLEFT", h3, "BOTTOMLEFT", 0, -8)
+        "Marks important rage breakpoints so you can read your bar at a glance. Each style ships its own default set.")
+    cbTicks:SetPoint("TOPLEFT", styleClassic, "BOTTOMLEFT", 0, -10)
 
     local cbGhost = makeCheckbox(panel, "Ghost line + dump hint",
         function() return cfg.showGhostLine end,
@@ -352,7 +376,7 @@ function Opt:Build()
     footer:SetPoint("BOTTOMLEFT", 16, 12)
     footer:SetWidth(540)
     footer:SetJustifyH("LEFT")
-    local version = "0.10.0"
+    local version = "0.10.1"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then

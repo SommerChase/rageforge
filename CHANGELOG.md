@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.1
+
+- **Forever curved combat fill:** replaced the straight StatusBar fallback with a
+  stack of short `StatusBar` segments along the curve. Each segment uses plain
+  `SetMinMaxValues(rageLow, rageHigh)` and passes (possibly secret) `UnitPower`
+  to `SetValue` — engine-side fill, no Lua math on secrets
+  (warcraft.wiki.gg Secret_Values / StatusBar BarValue aspect).
+- Forever uses this curved path **in and out of combat** so the shape no longer
+  collapses when restrictions flip.
+- Ghost notch on Forever uses a tiny StatusBar gated at retained rage (engine
+  compare). Dump-hint `-X` text still hides while rage is secret.
+- **Bar styles:** `classic` / `ribbon` (default) / `blade` via `/rf style` and
+  the settings window. Ribbon is thinner, deeper bow, fewer ticks (25/50/75).
+- Schema 10 migrates existing users onto the ribbon defaults (`/reload` after
+  style changes that alter geometry).
+
 ## 0.10.0
 
 - **WoW Forever support** from the same addon folder as TBC Anniversary.

@@ -64,8 +64,13 @@ rageforge/
   legacy fallbacks). Plain `GetSpellInfo` is missing on Forever.
 - Forever inherits Midnight secret values: tainted code cannot compare or
   arithmetic on secret UnitPower (primary resources stay secret in combat).
-  When rage is secret, RageBar switches to `ns.ForeverDisplay` (StatusBar +
-  ColorCurve) and hides ghost line / dump hint / cap-glow math.
+  Forever always draws through `ns.ForeverDisplay`: a stack of short
+  StatusBars along the curve, each with plain `SetMinMaxValues(low, high)`
+  and secret `SetValue(UnitPower)`. Do not reintroduce a straight StatusBar
+  fallback. Dump-hint `-X` math still hides while rage is secret.
+- Bar styles live in `ns.Config.STYLES` (`classic` / `ribbon` / `blade`).
+  Geometry from a style change needs `/reload` (slice / segment stacks are
+  built once at login).
 - Do not register `COMBAT_LOG_EVENT_UNFILTERED` on Forever. RageForge does
   not need the combat log for its current feature set.
 - Avoid per-frame allocations in `OnUpdate` (no table literals, no captures

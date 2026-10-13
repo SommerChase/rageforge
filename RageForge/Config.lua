@@ -7,21 +7,60 @@ local C = ns.Config
 
 -- Default settings. These get deep-copied into RageForgeDB on first load and
 -- any missing keys are filled in on subsequent loads (forward-compatible).
+-- Visual style presets. Applied via ApplyStyle(); geometry changes need /reload.
+-- "ribbon" is the new default -- thinner stroke, deeper bow, fewer ticks.
+C.STYLES = {
+    classic = {
+        label = "Classic",
+        barWidth = 22,
+        barHeight = 280,
+        curveAmplitude = 16,
+        edgeFeather = 2,
+        edgeAlpha = 0.45,
+        numberFontSize = 22,
+        thresholdTicks = { 10, 15, 25, 30, 50, 75 },
+    },
+    ribbon = {
+        label = "Ribbon",
+        barWidth = 12,
+        barHeight = 300,
+        curveAmplitude = 30,
+        edgeFeather = 3,
+        edgeAlpha = 0.55,
+        numberFontSize = 26,
+        thresholdTicks = { 25, 50, 75 },
+    },
+    blade = {
+        label = "Blade",
+        barWidth = 16,
+        barHeight = 290,
+        curveAmplitude = 22,
+        edgeFeather = 2,
+        edgeAlpha = 0.50,
+        numberFontSize = 24,
+        thresholdTicks = { 15, 25, 50, 75 },
+    },
+}
+
 C.defaults = {
     -- How much rage is retained on stance change.
     -- Tactical Mastery: 0/5 = 0, 3/5 = 15, 5/5 = 25.
     -- This is the linchpin of the whole addon. Get it right.
     tacticalMasteryRetained = 25,
 
+    -- Visual style: "classic" | "ribbon" | "blade"
+    barStyle = "ribbon",
+
     -- Bar geometry (logical, before scale). barHeight directly determines
     -- the vertical resolution of the fill -- one 1px slice per logical
     -- pixel of barHeight (see RageBar.lua "Build").
-    barWidth = 22,
-    barHeight = 280,
-    barCurveAmplitude = 16,   -- pixels of horizontal "bow" at the midpoint
+    -- Defaults match the "ribbon" preset (see C.STYLES).
+    barWidth = 12,
+    barHeight = 300,
+    barCurveAmplitude = 30,   -- pixels of horizontal "bow" at the midpoint
     barCurveDirection = -1,   -- -1 bows left, +1 bows right
-    barEdgeFeatherWidth = 2,  -- soft left/right edge pixels per row
-    barEdgeAlpha = 0.45,      -- alpha multiplier for feather strips
+    barEdgeFeatherWidth = 3,  -- soft left/right edge pixels per row
+    barEdgeAlpha = 0.55,      -- alpha multiplier for feather strips
 
     -- Position. Anchored to UIParent CENTER by default; user can drag.
     position = {
@@ -34,11 +73,11 @@ C.defaults = {
     locked = false,
 
     -- Threshold ticks shown on the bar (rage values).
-    -- These are the ability rage costs that matter most for warrior decisions.
-    thresholdTicks = { 10, 15, 25, 30, 50, 75 },
+    -- Ribbon default keeps the high-signal marks only.
+    thresholdTicks = { 25, 50, 75 },
     showTicks = true,
     showStanceIcons = true,
-    stanceIconSize = 24,
+    stanceIconSize = 22,
 
     -- Visual zones for stance-dance economy. Tones are brighter than v0.5
     -- but still warrior-flavored: emerald, bright gold, molten orange,
@@ -59,7 +98,7 @@ C.defaults = {
 
     -- Big numerical readout in/over the bar.
     showNumber = true,
-    numberFontSize = 22,
+    numberFontSize = 26,
 
     -- Rage cap warning: subtle border glow at 100 rage so you notice waste.
     rageCapWarn = true,
@@ -99,7 +138,37 @@ end
 -- Bump SCHEMA_VERSION whenever a default's *value* changes in a way that
 -- should propagate to existing users (e.g. recolor, layout). fillDefaults
 -- alone won't push new values into a user that already has the key.
-C.SCHEMA_VERSION = 9
+C.SCHEMA_VERSION = 10
+
+function C:GetStyle(name)
+    local key = name or (self.db and self.db.barStyle) or self.defaults.barStyle
+    return self.STYLES[key] or self.STYLES.ribbon
+end
+
+-- Copy a named style's geometry into the live db. Caller should /reload
+-- when barWidth / barHeight / curveAmplitude change (slice stack is built once).
+function C:ApplyStyle(name, opts)
+    opts = opts or {}
+    local style = self.STYLES[name]
+    if not style then
+        return false
+    end
+    self.db.barStyle = name
+    self.db.barWidth = style.barWidth
+    self.db.barHeight = style.barHeight
+    self.db.barCurveAmplitude = style.curveAmplitude
+    self.db.barEdgeFeatherWidth = style.edgeFeather
+    self.db.barEdgeAlpha = style.edgeAlpha
+    self.db.numberFontSize = style.numberFontSize
+    self.db.thresholdTicks = { unpack(style.thresholdTicks) }
+    if not opts.silent and self.Print then
+        self:Print(("style: %s ( /reload if the curve shape looks stale )"):format(style.label))
+    end
+    if ns.RageBar and ns.RageBar.ApplyConfig then
+        ns.RageBar:ApplyConfig()
+    end
+    return true
+end
 
 function C:Load()
     RageForgeDB = RageForgeDB or {}
@@ -138,6 +207,12 @@ function C:Load()
     if saved < 9 then
         -- v9: remove the low-value 5-rage tick from the default marker set.
         RageForgeDB.thresholdTicks = { unpack(self.defaults.thresholdTicks) }
+    end
+
+    if saved < 10 then
+        -- v10: ribbon default style -- thinner curve, deeper bow, cleaner ticks.
+        self.db = RageForgeDB
+        self:ApplyStyle("ribbon", { silent = true })
     end
 
     RageForgeDB._schemaVersion = C.SCHEMA_VERSION
@@ -183,7 +258,23 @@ local function handleSlash(input)
         C:Print("  /rf ticks             toggle threshold tick marks")
         C:Print("  /rf stances           toggle stance icon rail")
         C:Print("  /rf ghost             toggle ghost line (post-stance-dance preview)")
+        C:Print("  /rf style <name>      classic | ribbon | blade  (then /reload)")
         C:Print("  /rf status            show client / secret-value diagnostics")
+        return
+    end
+
+    if cmd == "style" then
+        local name = (rest or ""):match("^(%S+)") or ""
+        if name == "" then
+            C:Print(("current style: %s"):format(tostring(C:Get("barStyle") or "ribbon")))
+            C:Print("usage: /rf style <classic|ribbon|blade>  then /reload")
+            return
+        end
+        if not C.STYLES[name] then
+            C:Print("unknown style. try: classic, ribbon, blade")
+            return
+        end
+        C:ApplyStyle(name)
         return
     end
 

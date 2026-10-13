@@ -56,7 +56,7 @@ If you've ever stood in front of a healer thinking "do I have enough rage to
 dump and stance-dance into Overpower right now, or will I bleed out?" — this
 addon answers that question without you doing math.
 
-## Features (v0.10.0)
+## Features (v0.10.1)
 
 - **Smoother no-art curved bar** rendered as 1-pixel horizontal rows with
   full-opacity centers and soft left/right feather strips. Row centers are
@@ -215,6 +215,7 @@ For power users / scripts, every setting is also a slash command:
 /rf ticks        toggle threshold tick marks
 /rf stances      toggle stance icon rail
 /rf ghost        toggle the ghost (post-stance-dance) line
+/rf style <name> classic | ribbon | blade (then /reload)
 /rf status       client / secret-value diagnostics (Forever)
 ```
 
@@ -307,12 +308,18 @@ rageforge/
 - Forever uses the **Mainline / Midnight** addon API (not Classic). RageForge
   feature-detects `C_Spell`, `C_UnitAuras`, and secret values — it does **not**
   branch on `WOW_PROJECT_ID`.
-- **In combat, player rage may be secret.** The curved slice renderer needs
-  Lua comparisons, so RageForge degrades to a straight StatusBar + ColorCurve
-  fill. While restricted:
-  - Ghost line, dump hint (`-X`), and rage-cap glow comparisons are hidden.
+- **In combat, player rage may be secret.** Forever keeps a **curved** fill by
+  stacking short `StatusBar` segments along the parabola: each segment has a
+  plain rage sub-range (`SetMinMaxValues`) and receives secret `UnitPower`
+  via `SetValue` (engine fill; no Lua math on secrets — see warcraft.wiki.gg
+  Secret_Values). Combat and out-of-combat share that path so the curve does
+  not collapse. While rage is secret:
+  - Dump hint (`-X`) and rage-cap glow math are hidden.
+  - A StatusBar-gated ghost notch can still appear at retained rage.
   - The big rage number uses a secret-safe formatter when available.
-  - Out of combat (rage readable again), the full curved bar returns.
+- **Bar styles:** `/rf style classic|ribbon|blade` (or the settings radios).
+  Default is **ribbon** — thinner stroke, deeper bow, ticks at 25/50/75.
+  Geometry changes need `/reload`.
 - **Battle Shout reminder:** uses `C_UnitAuras` when readable; when auras are
   secret in combat, falls back to the local cast countdown from
   `UNIT_SPELLCAST_SUCCEEDED` (party/raid shouts you did not cast may not clear
