@@ -66,11 +66,16 @@ local battleShoutDurationStartedAt = nil
 local battleShoutLastDuration = nil
 local auraCheckElapsed = 0
 
-local STANCES = {
-    { texture = "Interface\\Icons\\Ability_Warrior_OffensiveStance" },
-    { texture = "Interface\\Icons\\Ability_Warrior_DefensiveStance" },
-    { texture = "Interface\\Icons\\Ability_Racial_Avatar" },
+-- Fallback textures keyed by stance spellID when GetShapeshiftFormInfo
+-- returns a numeric fileID we still want a known path, or for debugging.
+-- Not used to decide which stances are shown -- learning state comes from
+-- GetNumShapeshiftForms / GetShapeshiftFormInfo (+ IsSpellKnown when present).
+local STANCE_FALLBACK_BY_SPELL = {
+    [2457] = "Interface\\Icons\\Ability_Warrior_OffensiveStance", -- Battle
+    [71]   = "Interface\\Icons\\Ability_Warrior_DefensiveStance", -- Defensive
+    [2458] = "Interface\\Icons\\Ability_Racial_Avatar",           -- Berserker
 }
+local MAX_STANCE_SLOTS = 3
 
 local BATTLE_SHOUT_SPELL_ID = 6673
 local BATTLE_SHOUT_ICON = "Interface\\Icons\\Ability_Warrior_BattleShout"
@@ -206,6 +211,46 @@ local function setSlicesShown(shown)
     end
 end
 
+-- Tear down and rebuild geometry (style / width / height / curve changes).
+-- Prefer this over /reload when switching Ribbon / Blade / Classic.
+function Bar:Rebuild()
+    if container then
+        container:Hide()
+        container:SetParent(nil)
+        container = nil
+    end
+
+    wipe(slices)
+    wipe(sliceLeftFeathers)
+    wipe(sliceRightFeathers)
+    wipe(sliceMidRage)
+    wipe(tickArtifacts)
+    wipe(stanceArtifacts)
+
+    ghostLine = nil
+    ghostNotch = nil
+    dumpHintFS = nil
+    battleShoutFrame = nil
+    battleShoutIcon = nil
+    battleShoutBorder = nil
+    battleShoutTimerFS = nil
+    capGlow = nil
+    numberFS = nil
+    labelFS = nil
+    rageSecretMode = false
+
+    if ns.ForeverDisplay then
+        -- Force ForeverDisplay to treat the next Build as fresh.
+        if ns.ForeverDisplay.Rebuild then
+            -- parent cleared; Build() below recreates against the new container.
+        end
+    end
+
+    self:Build()
+    self:Update()
+    return true
+end
+
 function Bar:Build()
     if container then return end
 
@@ -271,24 +316,19 @@ function Bar:Build()
         sliceMidRage[i] = t * 100
     end
 
-    -- Stance rail. Icons are square-cropped, rotated, and packed into a
-    -- tight vertical strip. Each icon's right edge touches the bar's left
-    -- edge, which reads as the spell icon's bottom edge touching the bar
-    -- after rotation.
+    -- Stance rail slots (max 3). Visibility + texture + packed layout are
+    -- driven by learned shapeshift forms in RefreshStanceIcons -- never by
+    -- hardcoded level checks.
     local iconSize = cfg.stanceIconSize or 24
     local railCenterY = snapPixel(barAnchorY + cfg.barHeight * 0.50)
-    for i, stance in ipairs(STANCES) do
-        local iconY = railCenterY + (2 - i) * iconSize
-        local frac = (iconY - barAnchorY) / cfg.barHeight
-        local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
-        local leftEdgeX = snapPixel(barCenterlineX + xOff - cfg.barWidth * 0.5)
-
+    container._railCenterY = railCenterY
+    container._stanceIconSize = iconSize
+    for i = 1, MAX_STANCE_SLOTS do
         local icon = container:CreateTexture(nil, "OVERLAY", nil, 1)
-        icon:SetTexture(stance.texture)
         icon:SetSize(iconSize, iconSize)
         setStanceIconTexCoord(icon)
-        icon:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX, iconY)
         icon:SetAlpha(1)
+        icon:Hide()
 
         local border = container:CreateTexture(nil, "OVERLAY", nil, 2)
         border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
@@ -298,7 +338,7 @@ function Bar:Build()
         border:SetVertexColor(1.0, 0.82, 0.18, 1.0)
         border:Hide()
 
-        stanceArtifacts[i] = { icon = icon, border = border }
+        stanceArtifacts[i] = { icon = icon, border = border, formIndex = nil }
     end
 
     -- Threshold ticks. Per user feedback (v0.2): ticks live OUTSIDE the bar
@@ -482,24 +522,69 @@ function Bar:RefreshStanceIcons()
     if not container then return end
     local cfg = ns.Config.db
     local _, class = UnitClass("player")
+    local iconSize = container._stanceIconSize or cfg.stanceIconSize or 24
+    local railCenterY = container._railCenterY
+        or snapPixel(container._barAnchorY + cfg.barHeight * 0.50)
+    local barAnchorY = container._barAnchorY or 36
+    local barCenterlineX = container._barCenterlineX or 0
 
-    for i, art in ipairs(stanceArtifacts) do
+    -- Hide everything when disabled or non-warrior.
+    if not cfg.showStanceIcons or class ~= "WARRIOR" then
+        for _, art in ipairs(stanceArtifacts) do
+            art.icon:Hide()
+            if art.border then art.border:Hide() end
+            art.formIndex = nil
+        end
+        return
+    end
+
+    local Compat = ns.Compat
+    local learned = (Compat and Compat.GetLearnedStances and Compat.GetLearnedStances()) or {}
+    local count = #learned
+
+    for slot = 1, MAX_STANCE_SLOTS do
+        local art = stanceArtifacts[slot]
+        if not art then break end
         local icon = art.icon
         local border = art.border
-        if not cfg.showStanceIcons or class ~= "WARRIOR" then
-            icon:Hide()
-            if border then border:Hide() end
-        else
-            icon:Show()
+
+        if slot <= count then
+            local info = learned[slot]
+            local tex = info.icon
+            if type(tex) ~= "string" and info.spellId and STANCE_FALLBACK_BY_SPELL[info.spellId] then
+                tex = STANCE_FALLBACK_BY_SPELL[info.spellId]
+            end
+            icon:SetTexture(tex)
+            setStanceIconTexCoord(icon)
             if icon.SetDesaturated then icon:SetDesaturated(false) end
             icon:SetVertexColor(1, 1, 1, 1)
-            if i == activeStance then
+
+            -- Pack tightly around the rail center — no gaps for locked stances.
+            local iconY = railCenterY + ((count + 1) * 0.5 - slot) * iconSize
+            local frac = clamp((iconY - barAnchorY) / math.max(1, cfg.barHeight), 0, 1)
+            local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
+            local leftEdgeX = snapPixel(barCenterlineX + xOff - cfg.barWidth * 0.5)
+            icon:ClearAllPoints()
+            icon:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX, iconY)
+            icon:Show()
+
+            art.formIndex = info.index
+            local isActive = info.active or (activeStance == info.index)
+            if isActive then
                 icon:SetAlpha(1.0)
-                if border then border:Show() end
+                if border then
+                    border:ClearAllPoints()
+                    border:SetPoint("CENTER", icon, "CENTER", 0, 0)
+                    border:Show()
+                end
             else
                 icon:SetAlpha(0.68)
                 if border then border:Hide() end
             end
+        else
+            icon:Hide()
+            if border then border:Hide() end
+            art.formIndex = nil
         end
     end
 end

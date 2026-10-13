@@ -1,12 +1,16 @@
 -- RageForge: Options.lua
--- Settings panel that registers in the Blizzard Interface Options frame
--- under the AddOns tab. Uses the legacy InterfaceOptions_AddCategory API,
--- which is what TBC Classic / Anniversary 2.5.5 supports.
+-- Settings UI + Blizzard Options > AddOns registration.
 --
--- All controls write directly into ns.Config.db and call RageBar:ApplyConfig()
--- so changes are live (no Apply button needed for display tweaks). Geometry
--- changes (bar width/height/curve) require a /reload because the bar's slice
--- stack is built once at PLAYER_LOGIN; we expose a Reload UI button for that.
+-- Forever / Mainline: Settings.RegisterCanvasLayoutCategory +
+-- Settings.RegisterAddOnCategory (warcraft.wiki.gg Creating a settings menu).
+-- TBC Anniversary: InterfaceOptions_AddCategory fallback.
+--
+-- /rf opens the registered category when possible
+-- (Settings.OpenToCategory / InterfaceOptionsFrame_OpenToCategory),
+-- with a standalone movable window as last-resort fallback.
+--
+-- Controls write ns.Config.db and preview live. Style changes rebuild the
+-- bar via RageBar:Rebuild(); a Reload UI button sits next to the selector.
 
 local ADDON_NAME, ns = ...
 ns.Options = {}
@@ -16,12 +20,18 @@ local panel
 local window
 local registered = false
 local buildError
+local settingsCategory
 local controls = {} -- everything with a _refresh() method, called on panel show
 
--- Apply config changes immediately so the bar updates while the user tweaks.
 local function applyLive()
     if ns.RageBar and ns.RageBar.ApplyConfig then
         ns.RageBar:ApplyConfig()
+    end
+end
+
+local function reloadUI()
+    if ReloadUI then
+        ReloadUI()
     end
 end
 
@@ -116,8 +126,6 @@ local function makeButton(parent, label, onClick, width)
     return b
 end
 
--- A "radio group" rendered as mutually-exclusive checkboxes. Cleaner than
--- UIRadioButtonTemplate, which tends to misbehave in classic clients.
 local radioGroups = {}
 local function makeRadio(parent, label, getter, setter, value, groupId)
     cbCount = cbCount + 1
@@ -130,7 +138,6 @@ local function makeRadio(parent, label, getter, setter, value, groupId)
     cb:SetChecked(getter() == value)
     cb:SetScript("OnClick", function(self)
         if not self:GetChecked() then
-            -- Don't allow unchecking the only selected radio; force-stay-checked.
             self:SetChecked(true)
             return
         end
@@ -162,9 +169,6 @@ local function ensureWindow()
     window:SetScript("OnDragStart", function(self) self:StartMoving() end)
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
-    -- Some Classic clients do not expose SetBackdrop unless a backdrop
-    -- template is used. Draw our own simple panel shell so the settings
-    -- window never appears as floating text over the world.
     local bg = window:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("TOPLEFT", window, "TOPLEFT", 8, -8)
     bg:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -8, 8)
@@ -211,6 +215,62 @@ local function ensureWindow()
     window:Hide()
 end
 
+local function openStandalone()
+    ensureWindow()
+    panel:SetParent(window)
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", window, "TOPLEFT", 18, -36)
+    panel:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -18, 18)
+    if panel.refresh then panel.refresh() end
+    panel:Show()
+    window:Show()
+end
+
+local function registerBlizzardCategory()
+    -- Forever / Mainline Settings API (canvas layout keeps our custom controls).
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        panel.OnCommit = function() end
+        panel.OnDefault = function()
+            if panel.default then panel.default() end
+        end
+        panel.OnRefresh = function()
+            if panel.refresh then panel.refresh() end
+        end
+
+        local ok, category, layout = pcall(Settings.RegisterCanvasLayoutCategory, panel, "RageForge")
+        if ok and category then
+            if layout and layout.AddAnchorPoint then
+                layout:AddAnchorPoint("TOPLEFT", 10, -10)
+                layout:AddAnchorPoint("BOTTOMRIGHT", -10, 10)
+            end
+            local okReg, errReg = pcall(Settings.RegisterAddOnCategory, category)
+            if okReg then
+                settingsCategory = category
+                return true
+            end
+            buildError = "Settings.RegisterAddOnCategory failed: " .. tostring(errReg)
+        else
+            buildError = "Settings.RegisterCanvasLayoutCategory failed: " .. tostring(category)
+        end
+    end
+
+    -- TBC Anniversary / Classic legacy AddOns list.
+    if InterfaceOptions_AddCategory then
+        local ok, err = pcall(InterfaceOptions_AddCategory, panel)
+        if ok then
+            return true
+        end
+        buildError = (buildError and (buildError .. "; ") or "")
+            .. "InterfaceOptions_AddCategory failed: " .. tostring(err)
+        return false
+    end
+
+    if not buildError then
+        buildError = "no Blizzard options API; standalone window only"
+    end
+    return false
+end
+
 function Opt:Build()
     if registered then return true end
 
@@ -220,7 +280,6 @@ function Opt:Build()
 
     local cfg = ns.Config.db
 
-    -- Title block
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("RageForge")
@@ -282,38 +341,52 @@ function Opt:Build()
         25, "tm")
     tm5:SetPoint("LEFT", tm3, "RIGHT", 130, 0)
 
-    -- ===== Display =====
-    local h3 = makeHeader(panel, "Display", tm0, -4, -32)
+    -- ===== Bar Style =====
+    local hStyle = makeHeader(panel, "Bar Style", tm0, -4, -28)
 
     local styleHelp = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    styleHelp:SetPoint("TOPLEFT", h3, "BOTTOMLEFT", 0, -4)
+    styleHelp:SetPoint("TOPLEFT", hStyle, "BOTTOMLEFT", 0, -4)
     styleHelp:SetWidth(540)
     styleHelp:SetJustifyH("LEFT")
-    styleHelp:SetText("Bar style \194\183 geometry changes need |cffff5f3f/reload|r after switching.")
+    styleHelp:SetText("Ribbon (default) is thin and elegant. Blade is medium. Classic is the original thick curve. " ..
+        "Applies live via bar rebuild; use Reload UI if anything looks wrong.")
 
-    local styleClassic = makeRadio(panel, "Classic (thick)",
-        function() return cfg.barStyle or "ribbon" end,
-        function(v) if ns.Config.ApplyStyle then ns.Config:ApplyStyle(v) end end,
-        "classic", "barStyle")
-    styleClassic:SetPoint("TOPLEFT", styleHelp, "BOTTOMLEFT", 0, -6)
+    local function applyStyle(name)
+        if ns.Config and ns.Config.ApplyStyle then
+            ns.Config:ApplyStyle(name)
+        end
+        if panel.refresh then panel.refresh() end
+    end
 
-    local styleRibbon = makeRadio(panel, "Ribbon (thin, default)",
+    local styleRibbon = makeRadio(panel, "Ribbon",
         function() return cfg.barStyle or "ribbon" end,
-        function(v) if ns.Config.ApplyStyle then ns.Config:ApplyStyle(v) end end,
+        applyStyle,
         "ribbon", "barStyle")
-    styleRibbon:SetPoint("LEFT", styleClassic, "RIGHT", 120, 0)
+    styleRibbon:SetPoint("TOPLEFT", styleHelp, "BOTTOMLEFT", 0, -8)
 
-    local styleBlade = makeRadio(panel, "Blade (medium)",
+    local styleBlade = makeRadio(panel, "Blade",
         function() return cfg.barStyle or "ribbon" end,
-        function(v) if ns.Config.ApplyStyle then ns.Config:ApplyStyle(v) end end,
+        applyStyle,
         "blade", "barStyle")
-    styleBlade:SetPoint("LEFT", styleRibbon, "RIGHT", 150, 0)
+    styleBlade:SetPoint("LEFT", styleRibbon, "RIGHT", 90, 0)
+
+    local styleClassic = makeRadio(panel, "Classic",
+        function() return cfg.barStyle or "ribbon" end,
+        applyStyle,
+        "classic", "barStyle")
+    styleClassic:SetPoint("LEFT", styleBlade, "RIGHT", 90, 0)
+
+    local reloadBtn = makeButton(panel, "Reload UI", reloadUI, 100)
+    reloadBtn:SetPoint("LEFT", styleClassic, "RIGHT", 100, 0)
+
+    -- ===== Display =====
+    local h3 = makeHeader(panel, "Display", styleRibbon, -4, -28)
 
     local cbTicks = makeCheckbox(panel, "Threshold ticks",
         function() return cfg.showTicks end,
         function(v) cfg.showTicks = v end,
         "Marks important rage breakpoints so you can read your bar at a glance. Each style ships its own default set.")
-    cbTicks:SetPoint("TOPLEFT", styleClassic, "BOTTOMLEFT", 0, -10)
+    cbTicks:SetPoint("TOPLEFT", h3, "BOTTOMLEFT", 0, -8)
 
     local cbGhost = makeCheckbox(panel, "Ghost line + dump hint",
         function() return cfg.showGhostLine end,
@@ -351,8 +424,6 @@ function Opt:Build()
     fontSize:SetPoint("TOPLEFT", cbBattleShout, "BOTTOMLEFT", 4, -28)
 
     -- ===== Footer =====
-    -- Separator keeps the credits/footer text visually distinct from controls
-    -- so we never overlap the last Display checkbox with the about line again.
     local sep = panel:CreateTexture(nil, "ARTWORK")
     sep:SetColorTexture(0.55, 0.42, 0.22, 0.6)
     sep:SetHeight(1)
@@ -376,17 +447,14 @@ function Opt:Build()
     footer:SetPoint("BOTTOMLEFT", 16, 12)
     footer:SetWidth(540)
     footer:SetJustifyH("LEFT")
-    local version = "0.10.1"
+    local version = "0.10.2"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then
         version = GetAddOnMetadata(ADDON_NAME, "Version") or version
     end
-    footer:SetText("RageForge v" .. version ..
-        "  \194\183  Settings auto-save. " ..
-        "Bar geometry requires /reload.")
+    footer:SetText("RageForge v" .. version .. "  \194\183  Settings auto-save.")
 
-    -- Blizzard panel hooks
     panel.refresh = function()
         for _, c in ipairs(controls) do
             if c._refresh then c._refresh() end
@@ -394,7 +462,6 @@ function Opt:Build()
     end
 
     panel.default = function()
-        -- Restore all settings (display + position + everything) to addon defaults.
         local function restore(target, defaults)
             for k, v in pairs(defaults) do
                 if type(v) == "table" then
@@ -406,31 +473,25 @@ function Opt:Build()
             end
         end
         restore(ns.Config.db, ns.Config.defaults)
-        applyLive()
+        if ns.Config.ApplyStyle then
+            ns.Config:ApplyStyle(ns.Config.db.barStyle or "ribbon", { silent = true })
+        else
+            applyLive()
+        end
         if panel.refresh then panel.refresh() end
     end
 
-    panel.okay   = function() end -- we save live, no commit needed
-    panel.cancel = function() end -- no rollback support; live edits already applied
+    panel.okay = function() end
+    panel.cancel = function() end
 
-    if InterfaceOptions_AddCategory then
-        local ok, err = pcall(InterfaceOptions_AddCategory, panel)
-        if not ok then
-            buildError = "InterfaceOptions_AddCategory failed; using standalone window: " .. tostring(err)
-        end
-    else
-        buildError = "InterfaceOptions_AddCategory is unavailable; using standalone window"
-    end
+    registerBlizzardCategory()
 
     panel:Hide()
     registered = true
-    if InterfaceOptions_AddCategory and not buildError then buildError = nil end
     return true
 end
 
--- Public: open our standalone settings window. We still register with the
--- Blizzard AddOns tab when possible, but /rf options must always work even
--- when the client refuses to surface that category.
+-- Open Blizzard Options > AddOns > RageForge when registered; else standalone.
 function Opt:Open()
     local ok, built = pcall(self.Build, self)
     if not ok then
@@ -446,12 +507,59 @@ function Opt:Open()
         return
     end
 
-    ensureWindow()
-    panel:SetParent(window)
-    panel:ClearAllPoints()
-    panel:SetPoint("TOPLEFT", window, "TOPLEFT", 18, -36)
-    panel:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -18, 18)
-    if panel.refresh then panel.refresh() end
-    panel:Show()
-    window:Show()
+    if Settings and Settings.OpenToCategory and settingsCategory then
+        local target = settingsCategory
+        if settingsCategory.GetID then
+            local idOk, id = pcall(settingsCategory.GetID, settingsCategory)
+            if idOk and id ~= nil then
+                target = id
+            end
+        end
+        local openOk = pcall(Settings.OpenToCategory, target)
+        if openOk then
+            if panel.refresh then panel.refresh() end
+            return
+        end
+    end
+
+    if InterfaceOptionsFrame_OpenToCategory and panel then
+        -- Classic bug: first call can fail to select; call twice.
+        pcall(InterfaceOptionsFrame_OpenToCategory, panel)
+        pcall(InterfaceOptionsFrame_OpenToCategory, panel)
+        if InterfaceOptionsFrame and InterfaceOptionsFrame.Show then
+            InterfaceOptionsFrame:Show()
+        end
+        if panel.refresh then panel.refresh() end
+        return
+    end
+
+    openStandalone()
+end
+
+function Opt:OpenStandalone()
+    local ok = pcall(self.Build, self)
+    if ok then
+        openStandalone()
+    end
+end
+
+-- Addon compartment click (Forever TOC AddonCompartmentFunc). Must be global.
+function RageForge_OnAddonCompartmentClick()
+    if ns.Options and ns.Options.Open then
+        ns.Options:Open()
+    end
+end
+
+function RageForge_OnAddonCompartmentEnter()
+    if GameTooltip then
+        GameTooltip:SetText("RageForge", 1, 0.82, 0)
+        GameTooltip:AddLine("Open RageForge settings", 1, 1, 1, true)
+        GameTooltip:Show()
+    end
+end
+
+function RageForge_OnAddonCompartmentLeave()
+    if GameTooltip then
+        GameTooltip:Hide()
+    end
 end

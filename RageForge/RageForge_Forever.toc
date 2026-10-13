@@ -2,11 +2,14 @@
 ## Title: RageForge
 ## Notes: Smart rage display for stance-dancing warriors on WoW Forever. Secret-safe combat fill when rage is restricted.
 ## Author: Chase Sommer
-## Version: 0.10.1
+## Version: 0.10.2
 ## SavedVariables: RageForgeDB
 ## DefaultState: enabled
 ## Category: Combat
 ## IconTexture: Interface\Icons\Ability_Warrior_OffensiveStance
+## AddonCompartmentFunc: RageForge_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: RageForge_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: RageForge_OnAddonCompartmentLeave
 
 # WoW Forever (Mainline-family game type). Interface 16001 = Forever Beta
 # per Warcraft Wiki TOC_format; confirm at launch with:

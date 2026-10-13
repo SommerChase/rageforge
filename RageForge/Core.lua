@@ -22,6 +22,9 @@ f:RegisterEvent("PLAYER_ALIVE")
 f:RegisterEvent("PLAYER_UNGHOST")
 f:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 f:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
+f:RegisterEvent("SPELLS_CHANGED")
+f:RegisterEvent("LEARNED_SPELL_IN_TAB")
+f:RegisterEvent("PLAYER_LEVEL_UP")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 
@@ -84,7 +87,13 @@ f:SetScript("OnEvent", function(_, event, ...)
             ns.RageBar:UpdateAuras()
         end
 
-    elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_FORMS" then
+    elseif event == "UPDATE_SHAPESHIFT_FORM"
+        or event == "UPDATE_SHAPESHIFT_FORMS"
+        or event == "SPELLS_CHANGED"
+        or event == "LEARNED_SPELL_IN_TAB"
+        or event == "PLAYER_LEVEL_UP" then
+        -- Stance rail shows only learned forms; refresh as soon as a stance
+        -- quest/spell unlocks so Defensive/Berserker appear without /reload.
         if ns.RageBar and ns.RageBar.UpdateStance then
             ns.RageBar:UpdateStance()
         end

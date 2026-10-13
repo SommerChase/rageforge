@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.2
+
+- **Options > AddOns registration:** Forever uses `Settings.RegisterCanvasLayoutCategory`
+  + `RegisterAddOnCategory`; TBC falls back to `InterfaceOptions_AddCategory`.
+  `/rf` opens the Blizzard category (`Settings.OpenToCategory` /
+  `InterfaceOptionsFrame_OpenToCategory`) with a standalone window as fallback.
+- **Addon compartment** entry on Forever/Camelot TOCs.
+- **Bar style selector** (Ribbon / Blade / Classic) with live `RageBar:Rebuild()`
+  and a Reload UI button beside it.
+- **Stance rail:** only shows stances returned by `GetNumShapeshiftForms` /
+  `GetShapeshiftFormInfo` (learned/unlocked). Relayout packs icons with no gaps.
+  Refreshes on `UPDATE_SHAPESHIFT_FORMS`, `SPELLS_CHANGED`, `LEARNED_SPELL_IN_TAB`,
+  and `PLAYER_LEVEL_UP`.
+
 ## 0.10.1
 
 - **Forever curved combat fill:** replaced the straight StatusBar fallback with a

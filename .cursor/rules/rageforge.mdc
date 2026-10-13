@@ -121,17 +121,20 @@ visual decision (zones, ghost line, number color) routes through it.
   rounds `displayedRage` to the nearest whole rage before coloring slices so
   the current-rage row never appears as a faded partial band. Only edge
   feathers use reduced alpha.
-- Stance icons live in `stanceArtifacts`. They are square-cropped and rotated
-  via 8-argument `SetTexCoord` so each spell icon's top edge points left and
-  its bottom edge visually touches the bar. Keep them packed as a tight stack
-  (`stanceIconSize` spacing), with right edges snapped to the bar's left edge.
-  Do not tint/desaturate them; active stance may be alpha 1.0 and inactive
-  stances alpha-dimmed only. Active stance also shows
+- Stance icons live in `stanceArtifacts`. Show **only learned** stances from
+  `GetNumShapeshiftForms` / `GetShapeshiftFormInfo` (via `ns.Compat.GetLearnedStances`).
+  Never hardcode level gates. Re-layout as a tight packed stack with no gaps
+  for locked stances; refresh on `UPDATE_SHAPESHIFT_FORMS`, `SPELLS_CHANGED`,
+  `LEARNED_SPELL_IN_TAB`, and `PLAYER_LEVEL_UP`. Icons are square-cropped and
+  rotated via 8-argument `SetTexCoord` so each spell icon's top edge points
+  left and its bottom edge visually touches the bar. Right edges snap to the
+  bar's left edge. Do not tint/desaturate them; active stance may be alpha 1.0
+  and inactive stances alpha-dimmed only. Active stance also shows
   `Interface\\Buttons\\UI-ActionButton-Border` as a gold outline; don't tint
-  the icon itself. Classic can crop/rotate rectangular textures, but it cannot
-  truly mask arbitrary stance icons into a curved silhouette without custom
-  art. If the user wants a perfect bent/cropped strip, create custom TGA art in
-  `RageForge/Textures/` rather than trying to fake masks with frame layers.
+  the icon itself.
+- Forever registers Options via `Settings.RegisterCanvasLayoutCategory`; TBC
+  uses `InterfaceOptions_AddCategory`. `/rf` opens the Blizzard category.
+  Forever TOC also declares AddonCompartmentFunc.
 - Battle Shout reminder lives in RageBar.lua (`battleShoutFrame`). It shows
   only for warriors when Battle Shout is missing or has <=
   `cfg.battleShoutWarnSeconds` remaining. `UNIT_AURA` updates it immediately,

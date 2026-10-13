@@ -76,6 +76,72 @@ function Compat.RagePowerType()
     return 1
 end
 
+-- Spell-known probe (TBC + Forever). Prefer IsPlayerSpell / IsSpellKnown;
+-- C_SpellBook.IsSpellInSpellBook when present on Mainline-family clients.
+function Compat.IsSpellKnown(spellId)
+    if not spellId then
+        return false
+    end
+    if type(IsPlayerSpell) == "function" then
+        local ok, known = pcall(IsPlayerSpell, spellId)
+        if ok then
+            return known and true or false
+        end
+    end
+    if type(IsSpellKnown) == "function" then
+        local ok, known = pcall(IsSpellKnown, spellId)
+        if ok then
+            return known and true or false
+        end
+    end
+    if hasFn(C_SpellBook, "IsSpellInSpellBook") then
+        local ok, known = pcall(C_SpellBook.IsSpellInSpellBook, spellId)
+        if ok then
+            return known and true or false
+        end
+    end
+    return false
+end
+
+-- Returns a packed list of learned warrior stances from the stance bar.
+-- GetNumShapeshiftForms / GetShapeshiftFormInfo only expose slots the player
+-- currently has (Battle from character creation; Defensive / Berserker after
+-- the quests teach them). No level hardcoding. IsSpellKnown is available via
+-- Compat.IsSpellKnown for other probes; the stance bar itself is authoritative
+-- here so we do not false-negative on clients where stance spells probe oddly.
+-- Each entry: { index, icon, name, active, castable, spellId }
+function Compat.GetLearnedStances()
+    local list = {}
+    if type(GetNumShapeshiftForms) ~= "function" or type(GetShapeshiftFormInfo) ~= "function" then
+        return list
+    end
+
+    local n = GetNumShapeshiftForms() or 0
+    for i = 1, n do
+        local a, b, c, d, e = GetShapeshiftFormInfo(i)
+        local icon, name, active, castable, spellId
+        -- Classic-era sometimes returns (icon, name, active, castable, spellId).
+        -- Modern docs list (icon, active, castable, spellID).
+        if type(b) == "string" then
+            icon, name, active, castable, spellId = a, b, c, d, e
+        else
+            icon, name, active, castable, spellId = a, nil, b, c, d
+        end
+
+        if icon then
+            list[#list + 1] = {
+                index = i,
+                icon = icon,
+                name = name,
+                active = active and true or false,
+                castable = castable and true or false,
+                spellId = spellId,
+            }
+        end
+    end
+    return list
+end
+
 -- True when tainted code may freely compare / math on this value.
 function Compat.CanUseNumber(value)
     if value == nil then

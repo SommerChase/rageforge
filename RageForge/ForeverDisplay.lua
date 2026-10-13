@@ -129,6 +129,12 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         return
     end
 
+    -- RageBar:Rebuild() destroys the old container; drop stale child refs.
+    if parentFrame and parentFrame ~= parent then
+        clearChildren()
+        built = false
+    end
+
     parentFrame = parent
     geom.width = width
     geom.height = height

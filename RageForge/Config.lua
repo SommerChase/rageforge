@@ -161,11 +161,22 @@ function C:ApplyStyle(name, opts)
     self.db.barEdgeAlpha = style.edgeAlpha
     self.db.numberFontSize = style.numberFontSize
     self.db.thresholdTicks = { unpack(style.thresholdTicks) }
-    if not opts.silent and self.Print then
-        self:Print(("style: %s ( /reload if the curve shape looks stale )"):format(style.label))
-    end
-    if ns.RageBar and ns.RageBar.ApplyConfig then
+    if ns.RageBar and ns.RageBar.Rebuild then
+        local ok = ns.RageBar:Rebuild()
+        if not opts.silent and self.Print then
+            if ok then
+                self:Print(("style: %s"):format(style.label))
+            else
+                self:Print(("style: %s -- tap Reload UI if the curve looks stale"):format(style.label))
+            end
+        end
+    elseif ns.RageBar and ns.RageBar.ApplyConfig then
         ns.RageBar:ApplyConfig()
+        if not opts.silent and self.Print then
+            self:Print(("style: %s -- /reload recommended"):format(style.label))
+        end
+    elseif not opts.silent and self.Print then
+        self:Print(("style: %s -- /reload to apply"):format(style.label))
     end
     return true
 end
