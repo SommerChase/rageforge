@@ -423,8 +423,46 @@ function Opt:Build()
     local reloadBtn = makeButton(content, "Reload UI", reloadUI, 100)
     reloadBtn:SetPoint("LEFT", styleClassic, "RIGHT", 100, 0)
 
+    -- ===== Frame Overlay =====
+    local hFrame = makeHeader(content, "Frame Overlay", styleBlade, -4, -28)
+
+    local frameHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frameHelp:SetPoint("TOPLEFT", hFrame, "BOTTOMLEFT", 0, -4)
+    frameHelp:SetWidth(CONTENT_WIDTH - 24)
+    frameHelp:SetJustifyH("LEFT")
+    frameHelp:SetText("Warrior-forged rim that sits over the bar and softens curve edges. " ..
+        "Iron (default) is steel with bronze accents; Bloodforged is darker with blood-red trim. None hides the rim.")
+
+    local function applyFrame(name)
+        if ns.Config and ns.Config.ApplyFrameStyle then
+            ns.Config:ApplyFrameStyle(name)
+        else
+            cfg.frameStyle = name
+            applyLive()
+        end
+        if panel.refresh then panel.refresh() end
+    end
+
+    local frameIron = makeRadio(content, "Iron",
+        function() return cfg.frameStyle or "iron" end,
+        applyFrame,
+        "iron", "frameStyle")
+    frameIron:SetPoint("TOPLEFT", frameHelp, "BOTTOMLEFT", 0, -8)
+
+    local frameBlood = makeRadio(content, "Bloodforged",
+        function() return cfg.frameStyle or "iron" end,
+        applyFrame,
+        "bloodforged", "frameStyle")
+    frameBlood:SetPoint("LEFT", frameIron, "RIGHT", 90, 0)
+
+    local frameNone = makeRadio(content, "None",
+        function() return cfg.frameStyle or "iron" end,
+        applyFrame,
+        "none", "frameStyle")
+    frameNone:SetPoint("LEFT", frameBlood, "RIGHT", 110, 0)
+
     -- ===== Display =====
-    local h3 = makeHeader(content, "Display", styleBlade, -4, -28)
+    local h3 = makeHeader(content, "Display", frameIron, -4, -28)
 
     local cbTicks = makeCheckbox(content, "Threshold ticks",
         function() return cfg.showTicks end,
@@ -491,7 +529,7 @@ function Opt:Build()
     footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
     footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    local version = "0.10.4"
+    local version = "0.11.0"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then

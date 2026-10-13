@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0
+
+- **Forever curve polish:** denser overlapping StatusBar segments with
+  soft-edged `SoftFill` texture (no per-segment borders); single curved
+  `SoftTrackCurve` background track; subtle zone gradient shading.
+- **Frame overlays:** warrior-themed `Iron` (default) and `Bloodforged`
+  rim textures in `RageForge/Media/`, plus `None`. Settings radios and
+  `/rf frame <none|iron|bloodforged>`. Works on Forever and TBC.
+- Blade remains the default bar style for new installs.
+
 ## 0.10.4
 
 - Options panel uses a ScrollFrame; credits sit at the end of scroll content

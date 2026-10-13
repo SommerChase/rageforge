@@ -64,10 +64,15 @@ rageforge/
   legacy fallbacks). Plain `GetSpellInfo` is missing on Forever.
 - Forever inherits Midnight secret values: tainted code cannot compare or
   arithmetic on secret UnitPower (primary resources stay secret in combat).
-  Forever always draws through `ns.ForeverDisplay`: a stack of short
-  StatusBars along the curve, each with plain `SetMinMaxValues(low, high)`
-  and secret `SetValue(UnitPower)`. Do not reintroduce a straight StatusBar
-  fallback. Dump-hint `-X` math still hides while rage is secret.
+  Forever always draws through `ns.ForeverDisplay`: dense overlapping
+  StatusBars along the curve with soft-edged `Media/SoftFill`, each with
+  plain `SetMinMaxValues(low, high)` and secret `SetValue(UnitPower)`, plus
+  a single `Media/SoftTrackCurve` background. Do not reintroduce a straight
+  StatusBar fallback. Dump-hint `-X` math still hides while rage is secret.
+- Frame overlays (`Media/FrameIron`, `Media/FrameBloodforged`) are optional
+  warrior rims controlled by `cfg.frameStyle` (`none` / `iron` / `bloodforged`,
+  default **iron**). Authored for the blade parabola; placement scales to
+  live width/height/amplitude.
 - Bar styles live in `ns.Config.STYLES` (`classic` / `ribbon` / `blade`).
   Default for new installs is **blade**. Existing SavedVariables keep their
   chosen `barStyle` (fillDefaults never overwrites). Geometry from a style

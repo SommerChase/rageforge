@@ -216,6 +216,7 @@ For power users / scripts, every setting is also a slash command:
 /rf stances      toggle stance icon rail
 /rf ghost        toggle the ghost (post-stance-dance) line
 /rf style <name> classic | ribbon | blade (then /reload)
+/rf frame <name> none | iron | bloodforged
 /rf status       client / secret-value diagnostics (Forever)
 ```
 
@@ -285,6 +286,8 @@ rageforge/
 |   +-- Core.lua              init, event router, OnUpdate driver
 |   +-- RageBar.lua           curved bar, zones, ghost line, ticks, glow
 |   +-- Options.lua           standalone /rf settings window
+|   +-- Media/                SoftFill, SoftTrackCurve, FrameIron/Bloodforged TGA
+|   +-- Fonts/                Prototype.ttf (+ Prototype.txt)
 +-- docs/
 |   +-- branding/
 |   |   +-- banner.png        2:1 hero banner; GitHub social preview, README header
@@ -319,6 +322,9 @@ rageforge/
   - The big rage number uses a secret-safe formatter when available.
 - **Bar styles:** `/rf style classic|ribbon|blade` (or the settings radios).
   Default is **blade** — medium elegant curve, ticks at 15/25/50/75.
+- **Frame overlays:** `/rf frame none|iron|bloodforged` (or settings radios).
+  Default is **iron** — forged steel rim with bronze accents. Bloodforged is
+  the darker blood-red variant. Authored TGA art lives in `RageForge/Media/`.
   Existing saved styles are kept. Style changes rebuild live.
 - **Battle Shout reminder:** uses `C_UnitAuras` when readable; when auras are
   secret in combat, falls back to the local cast countdown from

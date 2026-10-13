@@ -28,6 +28,19 @@ local Bar = ns.RageBar
 -- a built-in fallback if the file is ever missing on disk.
 local FONT_PATH = "Interface\\AddOns\\RageForge\\Fonts\\Prototype.ttf"
 local FALLBACK_FONT_PATH = "Fonts\\SKURRI.TTF"
+local MEDIA = "Interface\\AddOns\\RageForge\\Media\\"
+local TEX_FRAME = {
+    iron = MEDIA .. "FrameIron",
+    bloodforged = MEDIA .. "FrameBloodforged",
+}
+-- Authored SoftTrackCurve / Frame* metrics (blade curve baked into the TGA).
+local TEX_W, TEX_H = 128, 512
+local TEX_PAD = 16
+local TEX_USABLE = TEX_H - 2 * TEX_PAD
+local TEX_CX = 72
+local TEX_AUTHOR_SCALE = TEX_USABLE / 290
+local TEX_AMP = 22 * TEX_AUTHOR_SCALE
+local TEX_BW = 16 * TEX_AUTHOR_SCALE
 
 local function setFont(fs, size, flags)
     if not fs:SetFont(FONT_PATH, size, flags) then
@@ -46,6 +59,7 @@ local stanceArtifacts = {} -- cropped stance icons following the bar's left edge
 local ghostLine         -- horizontal line left of the bar at retained level
 local ghostNotch        -- bright notch ON the bar's left edge at retained level
 local dumpHintFS        -- "-X" label showing rage cost of dancing right now
+local classicFrameTex   -- Iron/Bloodforged overlay when ForeverDisplay is absent
 local battleShoutFrame
 local battleShoutIcon
 local battleShoutBorder
@@ -53,6 +67,42 @@ local battleShoutTimerFS
 local capGlow
 local numberFS
 local labelFS
+
+local function snapPixel(v)
+    return math.floor(v + 0.5)
+end
+
+local function placeCurveArt(tex, anchorX, anchorY, width, height, amplitude)
+    local scaleY = height / TEX_USABLE
+    local scaleX = amplitude / TEX_AMP
+    if width and TEX_BW > 0 then
+        local scaleW = width / TEX_BW
+        scaleX = (scaleX * 0.65) + (scaleW * 0.35)
+    end
+    tex:SetSize(TEX_W * scaleX, TEX_H * scaleY)
+    tex:ClearAllPoints()
+    tex:SetPoint(
+        "BOTTOMLEFT",
+        container,
+        "BOTTOMLEFT",
+        snapPixel(anchorX - TEX_CX * scaleX),
+        snapPixel(anchorY - TEX_PAD * scaleY)
+    )
+end
+
+local function applyClassicFrameStyle()
+    if not classicFrameTex then
+        return
+    end
+    local cfg = ns.Config.db
+    local path = TEX_FRAME[cfg.frameStyle or "iron"]
+    if path then
+        classicFrameTex:SetTexture(path)
+        classicFrameTex:Show()
+    else
+        classicFrameTex:Hide()
+    end
+end
 
 local displayedRage = 0
 local currentRage = 0
@@ -134,10 +184,6 @@ local function mixColor(a, b, t)
         lerp(a[2], b[2], t),
         lerp(a[3], b[3], t),
         lerp(a[4], b[4], t)
-end
-
-local function snapPixel(v)
-    return math.floor(v + 0.5)
 end
 
 local function isBattleShoutAura(name, icon)
@@ -230,6 +276,7 @@ function Bar:Rebuild()
     ghostLine = nil
     ghostNotch = nil
     dumpHintFS = nil
+    classicFrameTex = nil
     battleShoutFrame = nil
     battleShoutIcon = nil
     battleShoutBorder = nil
@@ -461,11 +508,30 @@ function Bar:Build()
         )
         setSlicesShown(false)
         ns.ForeverDisplay:SetSecretMode(true)
+    else
+        -- TBC / Classic: optional warrior frame overlay over the slice stack.
+        classicFrameTex = container:CreateTexture(nil, "OVERLAY", nil, 5)
+        placeCurveArt(
+            classicFrameTex,
+            barCenterlineX,
+            barAnchorY,
+            cfg.barWidth,
+            cfg.barHeight,
+            cfg.barCurveAmplitude or 16
+        )
+        applyClassicFrameStyle()
     end
 
     self:UpdateStance()
     self:UpdateAuras()
     self:ApplyConfig()
+end
+
+function Bar:ApplyFrameStyle()
+    if ns.ForeverDisplay and ns.ForeverDisplay.ApplyFrameStyle then
+        ns.ForeverDisplay:ApplyFrameStyle()
+    end
+    applyClassicFrameStyle()
 end
 
 function Bar:ApplyConfig()
@@ -512,6 +578,7 @@ function Bar:ApplyConfig()
     if ns.ForeverDisplay and ns.ForeverDisplay.RebuildColorCurve then
         ns.ForeverDisplay:RebuildColorCurve()
     end
+    self:ApplyFrameStyle()
 
     self:UpdateAuras()
 
