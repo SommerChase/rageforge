@@ -55,6 +55,8 @@ C.defaults = {
     -- Warrior frame overlay. New installs default to warlord.
     -- none | iron | bloodforged | warlord
     frameStyle = "warlord",
+    -- Accent outline weight. thin | medium | thick. Medium is ~1.5 screen px.
+    outlineThickness = "medium",
 
     -- Bar geometry (logical, before scale). barHeight directly determines
     -- the vertical resolution of the fill -- one 1px slice per logical
@@ -153,6 +155,48 @@ C.FRAME_STYLES = {
     bloodforged = { label = "Bloodforged", clearance = 6 },
     warlord = { label = "Warlord", clearance = 7 },
 }
+
+-- Pre-authored accent weights. Suffix is appended to FrameIron / FrameBloodforged / FrameWarlord.
+C.OUTLINE_THICKNESS = {
+    thin = { label = "Thin", suffix = "Thin" },
+    medium = { label = "Medium", suffix = "" },
+    thick = { label = "Thick", suffix = "Thick" },
+}
+
+local FRAME_TEXTURE_NAMES = {
+    iron = "Iron",
+    bloodforged = "Bloodforged",
+    warlord = "Warlord",
+}
+
+function C:FrameTexture(style, thickness)
+    local names = FRAME_TEXTURE_NAMES
+    local base = names[style or ""]
+    if not base then
+        return nil
+    end
+    local key = thickness or (self.db and self.db.outlineThickness) or "medium"
+    local info = self.OUTLINE_THICKNESS[key] or self.OUTLINE_THICKNESS.medium
+    return "Interface\\AddOns\\RageForge\\Media\\Frame" .. base .. info.suffix
+end
+
+function C:ApplyOutlineThickness(name, opts)
+    opts = opts or {}
+    if not self.OUTLINE_THICKNESS[name] then
+        return false
+    end
+    self.db.outlineThickness = name
+    if ns.ForeverDisplay and ns.ForeverDisplay.ApplyFrameStyle then
+        ns.ForeverDisplay:ApplyFrameStyle()
+    end
+    if ns.RageBar and ns.RageBar.ApplyFrameStyle then
+        ns.RageBar:ApplyFrameStyle()
+    end
+    if not opts.silent and self.Print then
+        self:Print(("outline: %s"):format(self.OUTLINE_THICKNESS[name].label))
+    end
+    return true
+end
 
 function C:GetStyle(name)
     local key = name or (self.db and self.db.barStyle) or self.defaults.barStyle
@@ -331,6 +375,7 @@ local function handleSlash(input)
         C:Print("  /rf ghost             toggle ghost line (post-stance-dance preview)")
         C:Print("  /rf style <name>      classic | ribbon | blade  (then /reload)")
         C:Print("  /rf frame <name>      none | iron | bloodforged | warlord")
+        C:Print("  /rf outline <weight>  thin | medium | thick")
         C:Print("  /rf status            show client / secret-value diagnostics")
         return
     end
@@ -362,6 +407,21 @@ local function handleSlash(input)
             return
         end
         C:ApplyFrameStyle(name)
+        return
+    end
+
+    if cmd == "outline" then
+        local name = (rest or ""):match("^(%S+)") or ""
+        if name == "" then
+            C:Print(("current outline: %s"):format(tostring(C:Get("outlineThickness") or "medium")))
+            C:Print("usage: /rf outline <thin|medium|thick>")
+            return
+        end
+        if not C.OUTLINE_THICKNESS[name] then
+            C:Print("unknown outline. try: thin, medium, thick")
+            return
+        end
+        C:ApplyOutlineThickness(name)
         return
     end
 

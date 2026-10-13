@@ -70,8 +70,11 @@ rageforge/
   a single `Media/SoftTrackCurve` background. Do not reintroduce a straight
   StatusBar fallback. Dump-hint `-X` math still hides while rage is secret.
 - Frame overlays via `cfg.frameStyle`: `none` / `iron` / `bloodforged` /
-  `warlord` (default **warlord**). Dark metal body with a thin accent
-  (orange / gold / steel) about 2 screen px so it stays continuous. No
+  `warlord` (default **warlord**). Dark metal body with the original accent
+  color. `cfg.outlineThickness` is `thin` / `medium` / `thick` (default
+  **medium**, about 1.5 screen px: a 1px solid core plus a feathered edge).
+  Each thickness is a pre-authored texture (`Frame<Style>`, `Frame<Style>Thin`,
+  `Frame<Style>Thick`). Swapping it is live via `ApplyFrameStyle`. No
   separate end-cap slabs: the same border closes along the top edge of the
   top segment and the bottom edge of the bottom segment. Forever fill uses
   dense VERTICAL StatusBars + solid SoftFill.

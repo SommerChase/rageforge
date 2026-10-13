@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.4
+
+- Outline thickness is a setting: Thin, Medium, or Thick. Medium is the
+  default, about 1.5 screen pixels (a solid core with a soft edge). The
+  accent colors are unchanged. Applies live. `/rf outline thin|medium|thick`.
+
 ## 0.13.3
 
 - Frame rails are a dark body again, with the original accent color (orange,

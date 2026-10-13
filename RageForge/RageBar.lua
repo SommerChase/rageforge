@@ -29,13 +29,8 @@ local Bar = ns.RageBar
 local FONT_PATH = "Interface\\AddOns\\RageForge\\Fonts\\Prototype.ttf"
 local FALLBACK_FONT_PATH = "Fonts\\SKURRI.TTF"
 local MEDIA = "Interface\\AddOns\\RageForge\\Media\\"
-local TEX_FRAME = {
-    iron = MEDIA .. "FrameIron",
-    bloodforged = MEDIA .. "FrameBloodforged",
-    warlord = MEDIA .. "FrameWarlord",
-}
 -- Authored SoftTrackCurve / Frame* metrics (blade curve; t=0 at TGA bottom).
--- 2x the 290px bar so trim lines stay ~2 screen px after filtering.
+-- 2x the 290px bar so a feathered ~1.5px accent stays continuous.
 local TEX_W, TEX_H = 512, 640
 local TEX_PAD = 30
 local TEX_USABLE = TEX_H - 2 * TEX_PAD
@@ -137,7 +132,7 @@ local function applyClassicFrameStyle()
         return
     end
     local cfg = ns.Config.db
-    local path = TEX_FRAME[cfg.frameStyle or "warlord"]
+    local path = ns.Config.FrameTexture and ns.Config:FrameTexture(cfg.frameStyle or "warlord") or nil
     if path then
         setCurveTexture(classicFrameTex, path)
         classicFrameTex:Show()

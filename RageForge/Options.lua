@@ -471,8 +471,39 @@ function Opt:Build()
         "none", "frameStyle")
     frameNone:SetPoint("LEFT", frameWarlord, "RIGHT", 90, 0)
 
+    -- ===== Outline thickness =====
+    local hOutline = makeHeader(content, "Outline Thickness", frameIron, -4, -28)
+
+    local outlineHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    outlineHelp:SetPoint("TOPLEFT", hOutline, "BOTTOMLEFT", 0, -4)
+    outlineHelp:SetWidth(CONTENT_WIDTH - 24)
+    outlineHelp:SetJustifyH("LEFT")
+    outlineHelp:SetText("How heavy the colored trim is. Medium (default) is about 1.5 pixels: a solid core with a soft edge. Thin is lighter. Thick is heavier. Colors stay the same. Applies live.")
+
+    local function setOutline(name)
+        cfg.outlineThickness = name
+    end
+
+    local outlineThin = makeRadio(content, "Thin",
+        function() return cfg.outlineThickness or "medium" end,
+        setOutline,
+        "thin", "outline")
+    outlineThin:SetPoint("TOPLEFT", outlineHelp, "BOTTOMLEFT", 0, -8)
+
+    local outlineMedium = makeRadio(content, "Medium",
+        function() return cfg.outlineThickness or "medium" end,
+        setOutline,
+        "medium", "outline")
+    outlineMedium:SetPoint("LEFT", outlineThin, "RIGHT", 90, 0)
+
+    local outlineThick = makeRadio(content, "Thick",
+        function() return cfg.outlineThickness or "medium" end,
+        setOutline,
+        "thick", "outline")
+    outlineThick:SetPoint("LEFT", outlineMedium, "RIGHT", 110, 0)
+
     -- ===== Display =====
-    local h3 = makeHeader(content, "Display", frameIron, -4, -28)
+    local h3 = makeHeader(content, "Display", outlineThin, -4, -28)
 
     local cbTicks = makeCheckbox(content, "Threshold ticks",
         function() return cfg.showTicks end,
@@ -539,7 +570,7 @@ function Opt:Build()
     footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
     footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    local version = "0.13.3"
+    local version = "0.13.4"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then

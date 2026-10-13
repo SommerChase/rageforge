@@ -22,11 +22,6 @@ local FD = ns.ForeverDisplay
 local MEDIA = "Interface\\AddOns\\RageForge\\Media\\"
 local TEX_SOFT_FILL = MEDIA .. "SoftFill"
 local TEX_TRACK_CURVE = MEDIA .. "SoftTrackCurve"
-local TEX_FRAME = {
-    iron = MEDIA .. "FrameIron",
-    bloodforged = MEDIA .. "FrameBloodforged",
-    warlord = MEDIA .. "FrameWarlord",
-}
 
 -- Authored at 2x the 290px bar so a 2-screen-px accent is 4 texels
 -- (source = 2 * texHeight / displayHeight). t=0 at bottom of TGA.
@@ -186,8 +181,8 @@ local function placeCurveArt(tex, anchorX, anchorY, width, height, amplitude)
     return scaleX, scaleY
 end
 
--- Trilinear keeps the ~2px accent continuous when the UI scale drops to 0.64.
--- The 4-arg form is Forever/Mainline; Classic clients fall back to the path.
+-- Trilinear keeps a feathered ~1.5px accent continuous. The 4-arg form is
+-- Forever/Mainline; Classic clients fall back to the path.
 local function setCurveTexture(tex, path)
     if not tex or not path then
         return
@@ -205,7 +200,7 @@ local function applyFrameStyle()
     end
     local cfg = ns.Config.db
     local key = cfg.frameStyle or "warlord"
-    local path = TEX_FRAME[key]
+    local path = ns.Config.FrameTexture and ns.Config:FrameTexture(key) or nil
     if path then
         setCurveTexture(frameTex, path)
         frameTex:Show()
