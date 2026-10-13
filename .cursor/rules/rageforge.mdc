@@ -69,8 +69,9 @@ rageforge/
   and secret `SetValue(UnitPower)`. Do not reintroduce a straight StatusBar
   fallback. Dump-hint `-X` math still hides while rage is secret.
 - Bar styles live in `ns.Config.STYLES` (`classic` / `ribbon` / `blade`).
-  Geometry from a style change needs `/reload` (slice / segment stacks are
-  built once at login).
+  Default for new installs is **blade**. Existing SavedVariables keep their
+  chosen `barStyle` (fillDefaults never overwrites). Geometry from a style
+  change needs `/reload` (slice / segment stacks are built once at login).
 - Do not register `COMBAT_LOG_EVENT_UNFILTERED` on Forever. RageForge does
   not need the combat log for its current feature set.
 - Avoid per-frame allocations in `OnUpdate` (no table literals, no captures
@@ -174,10 +175,18 @@ short and mnemonic.
 
 ## Options panel (Options.lua)
 
-- `/rf` and `/rf options` open RageForge's own standalone movable window. This is the
-  reliable settings path. We may still call legacy `InterfaceOptions_AddCategory`
-  when available, but do not depend on the Blizzard AddOns list surfacing the
-  category on Anniversary clients.
+- Panel content lives in a `ScrollFrame` (`UIPanelScrollFrameTemplate` with a
+  plain ScrollFrame fallback). Credits/footer are the last children of the
+  scroll child — never panel-bottom anchored — so Forever Options and TBC
+  Interface Options never clip controls or overlap the Display section.
+  Mouse-wheel scrolling is wired on the ScrollFrame; content width stays
+  inside the canvas (no horizontal clip).
+- `/rf` and `/rf options` open the Blizzard AddOns category when registered
+  (`Settings.OpenToCategory` / `InterfaceOptionsFrame_OpenToCategory`), with
+  the standalone movable window as fallback. Forever uses
+  `Settings.RegisterCanvasLayoutCategory`; TBC uses
+  `InterfaceOptions_AddCategory`. Do not depend solely on the Blizzard AddOns
+  list surfacing the category on Anniversary clients.
 - Anniversary 2.5.5 does **not** have the modern Dragonflight
   `Settings.RegisterAddOnCategory` API. Don't use it.
 - All controls write directly to `ns.Config.db` and call `RageBar:ApplyConfig()`
