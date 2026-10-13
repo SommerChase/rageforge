@@ -131,9 +131,8 @@ visual decision (zones, ghost line, number color) routes through it.
   `GetNumShapeshiftForms` / `GetShapeshiftFormInfo` (via `ns.Compat.GetLearnedStances`).
   Never hardcode level gates. Re-layout as a tight packed stack with no gaps
   for locked stances; refresh on `UPDATE_SHAPESHIFT_FORMS`, `SPELLS_CHANGED`,
-  `LEARNED_SPELL_IN_TAB`, and `PLAYER_LEVEL_UP`. Icons are square-cropped and
-  rotated via 8-argument `SetTexCoord` so each spell icon's top edge points
-  left and its bottom edge visually touches the bar. Right edges snap to the
+  `LEARNED_SPELL_IN_TAB`, and `PLAYER_LEVEL_UP`.   Icons are square-cropped and stay upright (`SetTexCoord(0.08, 0.92, 0.08, 0.92)`,
+  `SetRotation(0)`). Do not tilt them along the curve. Right edges snap to the
   bar's left edge. Do not tint/desaturate them; active stance may be alpha 1.0
   and inactive stances alpha-dimmed only. Active stance also shows
   `Interface\\Buttons\\UI-ActionButton-Border` as a gold outline; don't tint

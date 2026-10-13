@@ -35,10 +35,11 @@ local TEX_FRAME = {
     warlord = MEDIA .. "FrameWarlord",
 }
 -- Authored SoftTrackCurve / Frame* metrics (blade curve; t=0 at TGA bottom).
-local TEX_W, TEX_H = 256, 512
-local TEX_PAD = 24
+-- 2x the 290px bar so trim lines stay ~2 screen px after filtering.
+local TEX_W, TEX_H = 512, 640
+local TEX_PAD = 30
 local TEX_USABLE = TEX_H - 2 * TEX_PAD
-local TEX_CX = 128
+local TEX_CX = 256
 local TEX_AUTHOR_SCALE = TEX_USABLE / 290
 local TEX_AMP = 22 * TEX_AUTHOR_SCALE
 local TEX_BW = 16 * TEX_AUTHOR_SCALE
@@ -97,6 +98,22 @@ local function snapPixel(v)
     return math.floor(v + 0.5)
 end
 
+local function setCurveTexture(tex, path)
+    if not tex or not path then
+        return
+    end
+    local ok = pcall(tex.SetTexture, tex, path, "CLAMP", "CLAMP", "TRILINEAR")
+    if not ok then
+        tex:SetTexture(path)
+    end
+    if tex.SetSnapToPixelGrid then
+        tex:SetSnapToPixelGrid(false)
+    end
+    if tex.SetTexelSnappingBias then
+        tex:SetTexelSnappingBias(0)
+    end
+end
+
 local function placeCurveArt(tex, anchorX, anchorY, width, height, amplitude)
     local scaleY = height / TEX_USABLE
     local scaleX = amplitude / TEX_AMP
@@ -122,7 +139,7 @@ local function applyClassicFrameStyle()
     local cfg = ns.Config.db
     local path = TEX_FRAME[cfg.frameStyle or "warlord"]
     if path then
-        classicFrameTex:SetTexture(path)
+        setCurveTexture(classicFrameTex, path)
         classicFrameTex:Show()
     else
         classicFrameTex:Hide()
@@ -179,17 +196,12 @@ local function resolveBattleShoutName()
     end
 end
 
--- Square-crop the icon and rotate the sampled texture so the spell icon's
--- top edge points left on screen. WoW's 8-argument SetTexCoord maps the
--- sampled image coordinates to the region corners: UL, LL, UR, LR.
+-- Square-crop only. Icons stay upright (rotation 0); positions are unchanged.
 local function setStanceIconTexCoord(icon)
-    local l, r, t, b = 0.08, 0.92, 0.08, 0.92
-    icon:SetTexCoord(
-        r, t,  -- upper-left region corner samples top-right of source
-        l, t,  -- lower-left region corner samples top-left of source
-        r, b,  -- upper-right region corner samples bottom-right of source
-        l, b   -- lower-right region corner samples bottom-left of source
-    )
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if icon.SetRotation then
+        icon:SetRotation(0)
+    end
 end
 
 local function clamp(v, minVal, maxVal)
@@ -477,6 +489,9 @@ function Bar:Build()
     battleShoutIcon:SetAllPoints(battleShoutFrame)
     battleShoutIcon:SetTexture(BATTLE_SHOUT_ICON)
     battleShoutIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if battleShoutIcon.SetRotation then
+        battleShoutIcon:SetRotation(0)
+    end
 
     battleShoutBorder = battleShoutFrame:CreateTexture(nil, "OVERLAY")
     battleShoutBorder:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
@@ -859,7 +874,13 @@ function Bar:UpdateAuras()
         battleShoutLastDuration = nil
     end
 
-    if battleShoutIcon then battleShoutIcon:SetTexture(icon) end
+    if battleShoutIcon then
+        battleShoutIcon:SetTexture(icon)
+        battleShoutIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        if battleShoutIcon.SetRotation then
+            battleShoutIcon:SetRotation(0)
+        end
+    end
     if battleShoutTimerFS then
         if found and battleShoutVisible and battleShoutRemaining > 0 and battleShoutRemaining < 999 then
             battleShoutTimerFS:SetText(tostring(math.ceil(battleShoutRemaining)))

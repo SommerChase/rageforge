@@ -75,7 +75,7 @@ addon answers that question without you doing math.
   (`GetNumShapeshiftForms` / `GetShapeshiftFormInfo`). Defensive / Berserker
   appear when unlocked (no hardcoded level checks); the rail re-packs with no
   gaps and refreshes on learn/level events. Icons are square-cropped and
-  rotated; inactive stances are alpha-dimmed only. Active stance uses
+  stay upright; inactive stances are alpha-dimmed only. Active stance uses
   Blizzard's action-button border as a gold outline.
 - **Battle Shout reminder** — a Battle Shout icon appears at the bottom-left
   of the rage bar when the buff is missing or has less than 30 seconds

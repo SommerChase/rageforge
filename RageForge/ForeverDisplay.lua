@@ -9,8 +9,9 @@
 --   up the curve as rage grows (no sideways sweep). Solid SoftFill + heavy
 --   overlap + disabled texel snapping removes horizontal seams. SoftTrackCurve
 --   is the empty track; Iron/Bloodforged/Warlord frames (closed end caps)
---   mask residual edge jaggies. Optional InnerGlow StatusBars intensify with
---   rage (also secret-safe).
+--   mask residual edge jaggies. No inner highlight strip — the fill stays a
+--   solid gradient. SetValue uses ExponentialEaseOut when the client has it
+--   (secret-safe). Clients without that enum lerp one shared rage out of combat.
 
 local ADDON_NAME, ns = ...
 ns.ForeverDisplay = {}
@@ -19,24 +20,23 @@ local FD = ns.ForeverDisplay
 local MEDIA = "Interface\\AddOns\\RageForge\\Media\\"
 local TEX_SOFT_FILL = MEDIA .. "SoftFill"
 local TEX_TRACK_CURVE = MEDIA .. "SoftTrackCurve"
-local TEX_INNER_GLOW = MEDIA .. "InnerGlow"
 local TEX_FRAME = {
     iron = MEDIA .. "FrameIron",
     bloodforged = MEDIA .. "FrameBloodforged",
     warlord = MEDIA .. "FrameWarlord",
 }
 
--- Authored texture metrics (blade curve; t=0 at bottom of TGA).
-local TEX_W, TEX_H = 256, 512
-local TEX_PAD = 24
+-- Authored at 2x the 290px bar so a 2-screen-px accent is 4 texels
+-- (source = 2 * texHeight / displayHeight). t=0 at bottom of TGA.
+local TEX_W, TEX_H = 512, 640
+local TEX_PAD = 30
 local TEX_USABLE = TEX_H - 2 * TEX_PAD
-local TEX_CX = 128
+local TEX_CX = 256
 local TEX_AUTHOR_SCALE = TEX_USABLE / 290
 local TEX_AMP = 22 * TEX_AUTHOR_SCALE
 local TEX_BW = 16 * TEX_AUTHOR_SCALE
 
 local segments = {}
-local glowSegments = {}
 local ghostGate
 local trackTex
 local frameTex
@@ -147,11 +147,6 @@ local function clearChildren()
         bar:SetParent(nil)
     end
     wipe(segments)
-    for _, bar in ipairs(glowSegments) do
-        bar:Hide()
-        bar:SetParent(nil)
-    end
-    wipe(glowSegments)
     if ghostGate then
         ghostGate:Hide()
         ghostGate:SetParent(nil)
@@ -189,16 +184,17 @@ local function placeCurveArt(tex, anchorX, anchorY, width, height, amplitude)
     return scaleX, scaleY
 end
 
-local function glowColorsForStyle(key)
-    -- secret-safe baked tints; intensity comes from StatusBar fill amount
-    if key == "bloodforged" then
-        return 1.0, 0.28, 0.06, 0.95
-    elseif key == "warlord" then
-        return 0.85, 0.65, 0.35, 0.70  -- class-tan / gold
-    elseif key == "iron" then
-        return 0.75, 0.70, 0.55, 0.45
+-- Trilinear keeps the ~2px accent continuous when the UI scale drops to 0.64.
+-- The 4-arg form is Forever/Mainline; Classic clients fall back to the path.
+local function setCurveTexture(tex, path)
+    if not tex or not path then
+        return
     end
-    return 1, 1, 1, 0
+    local ok = pcall(tex.SetTexture, tex, path, "CLAMP", "CLAMP", "TRILINEAR")
+    if not ok then
+        tex:SetTexture(path)
+    end
+    disableTexelSnap(tex)
 end
 
 local function applyFrameStyle()
@@ -209,27 +205,15 @@ local function applyFrameStyle()
     local key = cfg.frameStyle or "warlord"
     local path = TEX_FRAME[key]
     if path then
-        frameTex:SetTexture(path)
+        setCurveTexture(frameTex, path)
         frameTex:Show()
     else
         frameTex:Hide()
     end
-    local gr, gg, gb, ga = glowColorsForStyle(key)
-    for _, bar in ipairs(glowSegments) do
-        if key == "none" then
-            bar:Hide()
-        else
-            bar:Show()
-            if bar.SetStatusBarColor then
-                bar:SetStatusBarColor(gr, gg, gb, ga)
-            end
-            local tex = bar:GetStatusBarTexture()
-            if tex then
-                tex:SetVertexColor(gr, gg, gb, ga)
-            end
-        end
-    end
 end
+
+-- Assigned below. Declared here so Build closes over the local, not a global.
+local ensureSmoothDriver
 
 function FD:Build(parent, width, height, anchorX, anchorY)
     if not parent or not self:IsAvailable() then
@@ -256,10 +240,9 @@ function FD:Build(parent, width, height, anchorX, anchorY)
     local stroke = (style and style.barWidth) or width
     local retained = cfg.tacticalMasteryRetained or 25
     local zones = cfg.zones
-    local ease = interpolationMode()
 
     trackTex = parent:CreateTexture(nil, "BACKGROUND", nil, 0)
-    trackTex:SetTexture(TEX_TRACK_CURVE)
+    setCurveTexture(trackTex, TEX_TRACK_CURVE)
     placeCurveArt(trackTex, anchorX, anchorY, stroke, height, amp)
     trackTex:Show()
 
@@ -286,11 +269,7 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         bar:SetPoint("BOTTOM", parent, "BOTTOMLEFT", xCenter, y)
         bar:SetOrientation("VERTICAL")
         local tex = styleStatusBar(bar, TEX_SOFT_FILL)
-        if ease then
-            bar:SetMinMaxValues(rageLow, rageHigh, ease)
-        else
-            bar:SetMinMaxValues(rageLow, rageHigh)
-        end
+        bar:SetMinMaxValues(rageLow, rageHigh)
         bar:SetValue(0)
 
         local r, g, b, a = zoneColorForRage(midRage, retained, zones)
@@ -305,36 +284,6 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         bar._rageHigh = rageHigh
         bar._midRage = midRage
         segments[i] = bar
-    end
-
-    -- Inner-edge glow: thinner VERTICAL StatusBars just inside the left rim.
-    -- Secret-safe: engine fills them with the same power value.
-    local glowCount = math.min(80, math.max(40, math.floor(height / 4)))
-    local glowH = math.max(4, math.ceil((height / glowCount) * 2.5))
-    for i = 1, glowCount do
-        local t = (i - 0.5) / glowCount
-        local rageLow = ((i - 1) / glowCount) * 100
-        local rageHigh = (i / glowCount) * 100
-        local xOff = curveOffset(t, amp, dir)
-        local leftX = anchorX + xOff - stroke * 0.5 + 1
-        local y = anchorY + t * height - glowH * 0.5
-
-        local gbar = CreateFrame("StatusBar", nil, parent)
-        gbar:SetSize(3, glowH)
-        gbar:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", leftX, y)
-        gbar:SetFrameLevel((parent:GetFrameLevel() or 0) + 3)
-        gbar:SetOrientation("VERTICAL")
-        local gtex = styleStatusBar(gbar, TEX_INNER_GLOW)
-        if gtex and gtex.SetBlendMode then
-            gtex:SetBlendMode("ADD")
-        end
-        if ease then
-            gbar:SetMinMaxValues(rageLow, rageHigh, ease)
-        else
-            gbar:SetMinMaxValues(rageLow, rageHigh)
-        end
-        gbar:SetValue(0)
-        glowSegments[i] = gbar
     end
 
     frameTex = parent:CreateTexture(nil, "OVERLAY", nil, 5)
@@ -361,6 +310,8 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         ghostGate:SetValue(0)
         ghostGate:Show()
     end
+
+    ensureSmoothDriver(parent)
 
     built = true
     active = true
@@ -390,37 +341,90 @@ function FD:IsSecretMode()
     return active and built
 end
 
+-- One shared displayed rage so every segment's top edge stays on the same
+-- curve sample. Per-bar timers would stair-step the rim.
+local shownRage = 0
+local targetRage = 0
+local luaLerp = false
+local smoothFrame
+
+local function valueIsSecret(v)
+    if type(issecretvalue) == "function" and issecretvalue(v) then
+        return true
+    end
+    return type(v) ~= "number"
+end
+
+local function pushValue(value, withEase)
+    local ease = withEase and interpolationMode() or nil
+    for _, bar in ipairs(segments) do
+        if ease then
+            bar:SetValue(value, ease)
+        else
+            bar:SetValue(value)
+        end
+    end
+    if ghostGate then
+        if ease then
+            ghostGate:SetValue(value, ease)
+        else
+            ghostGate:SetValue(value)
+        end
+    end
+end
+
+local function onSmooth(_, dt)
+    if not luaLerp or not built then
+        return
+    end
+    if not dt or dt <= 0 then
+        dt = 0.016
+    end
+    local diff = targetRage - shownRage
+    if diff > -0.05 and diff < 0.05 then
+        if shownRage ~= targetRage then
+            shownRage = targetRage
+            pushValue(shownRage, false)
+        end
+        return
+    end
+    -- Exponential ease-out: same feel as StatusBarInterpolation.ExponentialEaseOut.
+    local k = 1 - math.exp(-8 * dt)
+    if k > 1 then
+        k = 1
+    end
+    shownRage = shownRage + diff * k
+    pushValue(shownRage, false)
+end
+
+ensureSmoothDriver = function(parent)
+    if not smoothFrame then
+        smoothFrame = CreateFrame("Frame")
+        smoothFrame:SetScript("OnUpdate", onSmooth)
+    end
+    smoothFrame:SetParent(parent)
+    smoothFrame:Show()
+end
+
 function FD:Update(power, powerMax, powerType)
-    if not built then
+    if not built or power == nil then
         return
     end
 
     local ease = interpolationMode()
-    for _, bar in ipairs(segments) do
-        if power ~= nil then
-            if ease then
-                bar:SetValue(power, ease)
-            else
-                bar:SetValue(power)
-            end
-        end
+    -- Engine easing works on secret values and keeps every segment on the
+    -- same target. Lua cannot read a secret, so it cannot lerp in combat.
+    if ease or valueIsSecret(power) then
+        luaLerp = false
+        pushValue(power, ease ~= nil)
+        return
     end
-    for _, bar in ipairs(glowSegments) do
-        if power ~= nil then
-            if ease then
-                bar:SetValue(power, ease)
-            else
-                bar:SetValue(power)
-            end
-        end
+
+    if not luaLerp then
+        shownRage = power
     end
-    if ghostGate and power ~= nil then
-        if ease then
-            ghostGate:SetValue(power, ease)
-        else
-            ghostGate:SetValue(power)
-        end
-    end
+    targetRage = power
+    luaLerp = true
 end
 
 function FD:RecolorFromConfig()

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.2
+
+- Frame trim (Iron, Bloodforged, Warlord) is a continuous ~2 screen-pixel
+  line. Textures are authored at 2x and sampled with trilinear filtering so
+  the accent does not break into dashes at UI scale 0.64 or 1.0.
+- Stance icons and the Battle Shout icon stay upright. Their positions are
+  unchanged.
+- The rage fill is a solid gradient. The extra vertical highlight along the
+  left edge of the fill is gone.
+- Vertical fill eases when rage rises or falls. Forever uses
+  `StatusBarInterpolation.ExponentialEaseOut` (works on secret values). Other
+  clients lerp one shared rage value out of combat so the top edge stays one
+  continuous curve.
+
 ## 0.13.1
 
 - Removed Ember and Filigree. Frame choices are None, Iron, Bloodforged, and

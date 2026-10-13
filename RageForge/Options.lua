@@ -539,7 +539,7 @@ function Opt:Build()
     footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
     footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    local version = "0.13.1"
+    local version = "0.13.2"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then
