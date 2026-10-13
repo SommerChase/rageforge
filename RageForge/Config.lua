@@ -7,8 +7,9 @@ local C = ns.Config
 
 -- Default settings. These get deep-copied into RageForgeDB on first load and
 -- any missing keys are filled in on subsequent loads (forward-compatible).
--- Visual style presets. Applied via ApplyStyle(); geometry changes need /reload.
--- "ribbon" is the new default -- thinner stroke, deeper bow, fewer ticks.
+-- Visual style presets. Applied via ApplyStyle(); Rebuild applies live.
+-- "blade" is the default for new installs. Existing SavedVariables keep
+-- whatever barStyle the player already chose (fillDefaults never overwrites).
 C.STYLES = {
     classic = {
         label = "Classic",
@@ -49,18 +50,18 @@ C.defaults = {
     tacticalMasteryRetained = 25,
 
     -- Visual style: "classic" | "ribbon" | "blade"
-    barStyle = "ribbon",
+    barStyle = "blade",
 
     -- Bar geometry (logical, before scale). barHeight directly determines
     -- the vertical resolution of the fill -- one 1px slice per logical
     -- pixel of barHeight (see RageBar.lua "Build").
-    -- Defaults match the "ribbon" preset (see C.STYLES).
-    barWidth = 12,
-    barHeight = 300,
-    barCurveAmplitude = 30,   -- pixels of horizontal "bow" at the midpoint
+    -- Defaults match the "blade" preset (see C.STYLES).
+    barWidth = 16,
+    barHeight = 290,
+    barCurveAmplitude = 22,   -- pixels of horizontal "bow" at the midpoint
     barCurveDirection = -1,   -- -1 bows left, +1 bows right
-    barEdgeFeatherWidth = 3,  -- soft left/right edge pixels per row
-    barEdgeAlpha = 0.55,      -- alpha multiplier for feather strips
+    barEdgeFeatherWidth = 2,  -- soft left/right edge pixels per row
+    barEdgeAlpha = 0.50,      -- alpha multiplier for feather strips
 
     -- Position. Anchored to UIParent CENTER by default; user can drag.
     position = {
@@ -73,8 +74,8 @@ C.defaults = {
     locked = false,
 
     -- Threshold ticks shown on the bar (rage values).
-    -- Ribbon default keeps the high-signal marks only.
-    thresholdTicks = { 25, 50, 75 },
+    -- Blade default: meaningful combat breakpoints.
+    thresholdTicks = { 15, 25, 50, 75 },
     showTicks = true,
     showStanceIcons = true,
     stanceIconSize = 22,
@@ -98,7 +99,7 @@ C.defaults = {
 
     -- Big numerical readout in/over the bar.
     showNumber = true,
-    numberFontSize = 26,
+    numberFontSize = 24,
 
     -- Rage cap warning: subtle border glow at 100 rage so you notice waste.
     rageCapWarn = true,
@@ -142,7 +143,7 @@ C.SCHEMA_VERSION = 10
 
 function C:GetStyle(name)
     local key = name or (self.db and self.db.barStyle) or self.defaults.barStyle
-    return self.STYLES[key] or self.STYLES.ribbon
+    return self.STYLES[key] or self.STYLES.blade
 end
 
 -- Copy a named style's geometry into the live db. Caller should /reload
@@ -221,9 +222,9 @@ function C:Load()
     end
 
     if saved < 10 then
-        -- v10: ribbon default style -- thinner curve, deeper bow, cleaner ticks.
-        self.db = RageForgeDB
-        self:ApplyStyle("ribbon", { silent = true })
+        -- v10 introduced barStyle presets. Do not force a style here:
+        -- fillDefaults supplies the current default (blade) for missing keys,
+        -- and players who already picked a style keep it.
     end
 
     RageForgeDB._schemaVersion = C.SCHEMA_VERSION

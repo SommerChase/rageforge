@@ -2,7 +2,7 @@
 ## Title: RageForge
 ## Notes: Smart rage display for stance-dancing warriors on WoW Forever. Secret-safe combat fill when rage is restricted.
 ## Author: Chase Sommer
-## Version: 0.10.3
+## Version: 0.10.4
 ## SavedVariables: RageForgeDB
 ## DefaultState: enabled
 ## Category: Combat

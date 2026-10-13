@@ -318,8 +318,8 @@ rageforge/
   - A StatusBar-gated ghost notch can still appear at retained rage.
   - The big rage number uses a secret-safe formatter when available.
 - **Bar styles:** `/rf style classic|ribbon|blade` (or the settings radios).
-  Default is **ribbon** — thinner stroke, deeper bow, ticks at 25/50/75.
-  Geometry changes need `/reload`.
+  Default is **blade** — medium elegant curve, ticks at 15/25/50/75.
+  Existing saved styles are kept. Style changes rebuild live.
 - **Battle Shout reminder:** uses `C_UnitAuras` when readable; when auras are
   secret in combat, falls back to the local cast countdown from
   `UNIT_SPELLCAST_SUCCEEDED` (party/raid shouts you did not cast may not clear

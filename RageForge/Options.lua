@@ -275,80 +275,124 @@ function Opt:Build()
     if registered then return true end
 
     panel = CreateFrame("Frame", "RageForgeOptionsPanel")
-    panel:SetSize(600, 720)
+    panel:SetSize(600, 520)
     panel.name = "RageForge"
+
+    -- Scrollable canvas so Forever Options / TBC Interface Options never clip
+    -- or overlap footer credits with Display controls.
+    local CONTENT_WIDTH = 560
+    local scroll
+    local okScroll, scrollOrErr = pcall(CreateFrame, "ScrollFrame", "RageForgeOptionsScroll", panel, "UIPanelScrollFrameTemplate")
+    if okScroll and scrollOrErr then
+        scroll = scrollOrErr
+    else
+        scroll = CreateFrame("ScrollFrame", "RageForgeOptionsScroll", panel)
+    end
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -4)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -26, 4)
+
+    local content = CreateFrame("Frame", "RageForgeOptionsScrollChild", scroll)
+    content:SetWidth(CONTENT_WIDTH)
+    content:SetHeight(900)
+    scroll:SetScrollChild(content)
+
+    scroll:EnableMouse(true)
+    scroll:EnableMouseWheel(true)
+    local function onOptionsMouseWheel(scrollFrame, delta)
+        local step = 36
+        local cur = scrollFrame:GetVerticalScroll() or 0
+        local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
+        local nextScroll = cur - (delta * step)
+        if nextScroll < 0 then nextScroll = 0 end
+        if nextScroll > maxScroll then nextScroll = maxScroll end
+        scrollFrame:SetVerticalScroll(nextScroll)
+    end
+    scroll:SetScript("OnMouseWheel", onOptionsMouseWheel)
+
+    local function sizeScrollChild()
+        local top = content:GetTop()
+        local bottom = content._lastBottom and content._lastBottom:GetBottom()
+        if top and bottom then
+            local h = (top - bottom) + 28
+            if h < 400 then h = 400 end
+            content:SetHeight(h)
+        end
+        if scroll.UpdateScrollChildRect then
+            scroll:UpdateScrollChildRect()
+        end
+    end
 
     local cfg = ns.Config.db
 
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
+    local title = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 12, -12)
     title:SetText("RageForge")
     title:SetTextColor(1, 0.37, 0.25)
 
-    local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local subtitle = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    subtitle:SetWidth(540)
+    subtitle:SetWidth(CONTENT_WIDTH - 24)
     subtitle:SetJustifyH("LEFT")
     subtitle:SetText("Smart rage display for stance-dancing warriors (TBC Anniversary + WoW Forever). " ..
         "Type |cffff5f3f/rf|r in chat for slash commands.")
 
     -- ===== Position & Scale =====
-    local h1 = makeHeader(panel, "Position & Scale", subtitle, 0, -20)
+    local h1 = makeHeader(content, "Position & Scale", subtitle, 0, -20)
 
-    local lock = makeCheckbox(panel, "Lock bar (uncheck to drag-and-drop)",
+    local lock = makeCheckbox(content, "Lock bar (uncheck to drag-and-drop)",
         function() return cfg.locked end,
         function(v) cfg.locked = v end,
         "When unlocked, the RAGE label changes to a small blue drag hint. Re-lock to return to the clean combat view.")
     lock:SetPoint("TOPLEFT", h1, "BOTTOMLEFT", 0, -8)
 
-    local scale = makeSlider(panel, "Scale", 0.5, 2.0, 0.05,
+    local scale = makeSlider(content, "Scale", 0.5, 2.0, 0.05,
         function() return cfg.scale end,
         function(v) cfg.scale = v end,
         "%s: %.2f")
     scale:SetPoint("TOPLEFT", lock, "BOTTOMLEFT", 4, -28)
 
-    local resetPos = makeButton(panel, "Reset Position", function()
+    local resetPos = makeButton(content, "Reset Position", function()
         cfg.position = { point = "CENTER", relPoint = "CENTER", x = -220, y = 0 }
         applyLive()
     end)
     resetPos:SetPoint("LEFT", scale, "RIGHT", 32, 0)
 
     -- ===== Stance Dance Math =====
-    local h2 = makeHeader(panel, "Stance Dance Math", scale, -4, -36)
+    local h2 = makeHeader(content, "Stance Dance Math", scale, -4, -36)
 
-    local tmHelp = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local tmHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     tmHelp:SetPoint("TOPLEFT", h2, "BOTTOMLEFT", 0, -6)
-    tmHelp:SetWidth(540)
+    tmHelp:SetWidth(CONTENT_WIDTH - 24)
     tmHelp:SetJustifyH("LEFT")
     tmHelp:SetText("Tactical Mastery rank \194\183 the rage retained on stance change. " ..
         "Drives the ghost line, dump hint, and zone colors.")
 
-    local tm0 = makeRadio(panel, "0/5  (0 retained)",
+    local tm0 = makeRadio(content, "0/5  (0 retained)",
         function() return cfg.tacticalMasteryRetained end,
         function(v) cfg.tacticalMasteryRetained = v end,
         0, "tm")
     tm0:SetPoint("TOPLEFT", tmHelp, "BOTTOMLEFT", 0, -8)
 
-    local tm3 = makeRadio(panel, "3/5  (15 retained)",
+    local tm3 = makeRadio(content, "3/5  (15 retained)",
         function() return cfg.tacticalMasteryRetained end,
         function(v) cfg.tacticalMasteryRetained = v end,
         15, "tm")
     tm3:SetPoint("LEFT", tm0, "RIGHT", 130, 0)
 
-    local tm5 = makeRadio(panel, "5/5  (25 retained)",
+    local tm5 = makeRadio(content, "5/5  (25 retained)",
         function() return cfg.tacticalMasteryRetained end,
         function(v) cfg.tacticalMasteryRetained = v end,
         25, "tm")
     tm5:SetPoint("LEFT", tm3, "RIGHT", 130, 0)
 
     -- ===== Bar Style =====
-    local hStyle = makeHeader(panel, "Bar Style", tm0, -4, -28)
+    local hStyle = makeHeader(content, "Bar Style", tm0, -4, -28)
 
-    local styleHelp = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local styleHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     styleHelp:SetPoint("TOPLEFT", hStyle, "BOTTOMLEFT", 0, -4)
-    styleHelp:SetWidth(540)
+    styleHelp:SetWidth(CONTENT_WIDTH - 24)
     styleHelp:SetJustifyH("LEFT")
-    styleHelp:SetText("Ribbon (default) is thin and elegant. Blade is medium. Classic is the original thick curve. " ..
+    styleHelp:SetText("Blade (default) is a medium elegant curve. Ribbon is thin. Classic is the original thick curve. " ..
         "Applies live via bar rebuild; use Reload UI if anything looks wrong.")
 
     local function applyStyle(name)
@@ -358,96 +402,96 @@ function Opt:Build()
         if panel.refresh then panel.refresh() end
     end
 
-    local styleRibbon = makeRadio(panel, "Ribbon",
-        function() return cfg.barStyle or "ribbon" end,
-        applyStyle,
-        "ribbon", "barStyle")
-    styleRibbon:SetPoint("TOPLEFT", styleHelp, "BOTTOMLEFT", 0, -8)
-
-    local styleBlade = makeRadio(panel, "Blade",
-        function() return cfg.barStyle or "ribbon" end,
+    local styleBlade = makeRadio(content, "Blade",
+        function() return cfg.barStyle or "blade" end,
         applyStyle,
         "blade", "barStyle")
-    styleBlade:SetPoint("LEFT", styleRibbon, "RIGHT", 90, 0)
+    styleBlade:SetPoint("TOPLEFT", styleHelp, "BOTTOMLEFT", 0, -8)
 
-    local styleClassic = makeRadio(panel, "Classic",
-        function() return cfg.barStyle or "ribbon" end,
+    local styleRibbon = makeRadio(content, "Ribbon",
+        function() return cfg.barStyle or "blade" end,
+        applyStyle,
+        "ribbon", "barStyle")
+    styleRibbon:SetPoint("LEFT", styleBlade, "RIGHT", 90, 0)
+
+    local styleClassic = makeRadio(content, "Classic",
+        function() return cfg.barStyle or "blade" end,
         applyStyle,
         "classic", "barStyle")
-    styleClassic:SetPoint("LEFT", styleBlade, "RIGHT", 90, 0)
+    styleClassic:SetPoint("LEFT", styleRibbon, "RIGHT", 90, 0)
 
-    local reloadBtn = makeButton(panel, "Reload UI", reloadUI, 100)
+    local reloadBtn = makeButton(content, "Reload UI", reloadUI, 100)
     reloadBtn:SetPoint("LEFT", styleClassic, "RIGHT", 100, 0)
 
     -- ===== Display =====
-    local h3 = makeHeader(panel, "Display", styleRibbon, -4, -28)
+    local h3 = makeHeader(content, "Display", styleBlade, -4, -28)
 
-    local cbTicks = makeCheckbox(panel, "Threshold ticks",
+    local cbTicks = makeCheckbox(content, "Threshold ticks",
         function() return cfg.showTicks end,
         function(v) cfg.showTicks = v end,
         "Marks important rage breakpoints so you can read your bar at a glance. Each style ships its own default set.")
     cbTicks:SetPoint("TOPLEFT", h3, "BOTTOMLEFT", 0, -8)
 
-    local cbGhost = makeCheckbox(panel, "Ghost line + dump hint",
+    local cbGhost = makeCheckbox(content, "Ghost line + dump hint",
         function() return cfg.showGhostLine end,
         function(v) cfg.showGhostLine = v end,
         "Bright notch on the bar's left edge at the rage you'd land on after stance change, plus the live -X label showing rage you'd lose right now.")
     cbGhost:SetPoint("TOPLEFT", cbTicks, "BOTTOMLEFT", 0, -4)
 
-    local cbStances = makeCheckbox(panel, "Stance icon rail",
+    local cbStances = makeCheckbox(content, "Stance icon rail",
         function() return cfg.showStanceIcons end,
         function(v) cfg.showStanceIcons = v end,
         "Shows Battle / Defensive / Berserker stance icons touching the bar's left edge. Icons are cropped and rotated; inactive stances are alpha-dimmed only.")
     cbStances:SetPoint("TOPLEFT", cbGhost, "BOTTOMLEFT", 0, -4)
 
-    local cbNumber = makeCheckbox(panel, "Big rage number above bar",
+    local cbNumber = makeCheckbox(content, "Big rage number above bar",
         function() return cfg.showNumber end,
         function(v) cfg.showNumber = v end)
     cbNumber:SetPoint("TOPLEFT", cbStances, "BOTTOMLEFT", 0, -4)
 
-    local cbCap = makeCheckbox(panel, "Rage cap warning (top of bar pulses near 100)",
+    local cbCap = makeCheckbox(content, "Rage cap warning (top of bar pulses near 100)",
         function() return cfg.rageCapWarn end,
         function(v) cfg.rageCapWarn = v end,
         "Subtle yellow pulse on the top edge of the bar when you're within 5 rage of cap, so you spot wasted rage in heated fights.")
     cbCap:SetPoint("TOPLEFT", cbNumber, "BOTTOMLEFT", 0, -4)
 
-    local cbBattleShout = makeCheckbox(panel, "Battle Shout reminder",
+    local cbBattleShout = makeCheckbox(content, "Battle Shout reminder",
         function() return cfg.showBattleShoutReminder end,
         function(v) cfg.showBattleShoutReminder = v end,
         "Shows a Battle Shout icon at the bottom-left of RageForge when the buff is missing or has 30 seconds or less remaining. Shows a countdown over the icon while expiring.")
     cbBattleShout:SetPoint("TOPLEFT", cbCap, "BOTTOMLEFT", 0, -4)
 
-    local fontSize = makeSlider(panel, "Number font size", 14, 36, 1,
+    local fontSize = makeSlider(content, "Number font size", 14, 36, 1,
         function() return cfg.numberFontSize end,
         function(v) cfg.numberFontSize = v end,
         "%s: %d")
     fontSize:SetPoint("TOPLEFT", cbBattleShout, "BOTTOMLEFT", 4, -28)
 
-    -- ===== Footer =====
-    local sep = panel:CreateTexture(nil, "ARTWORK")
+    -- ===== Credits (end of scroll content -- never panel-bottom anchored) =====
+    local sep = content:CreateTexture(nil, "ARTWORK")
     sep:SetColorTexture(0.55, 0.42, 0.22, 0.6)
     sep:SetHeight(1)
-    sep:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 16, 82)
-    sep:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 82)
+    sep:SetWidth(CONTENT_WIDTH - 24)
+    sep:SetPoint("TOPLEFT", fontSize, "BOTTOMLEFT", -4, -28)
 
-    local about = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    about:SetPoint("BOTTOMLEFT", 16, 56)
-    about:SetWidth(540)
+    local about = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    about:SetPoint("TOPLEFT", sep, "BOTTOMLEFT", 0, -12)
+    about:SetWidth(CONTENT_WIDTH - 24)
     about:SetJustifyH("LEFT")
     about:SetText("Created by Chase Sommer, a game designer who loves to play and build addons and communities around WoW.\n" ..
         "X: x.com/SommerChase  \194\183  YouTube: youtube.com/@chasesommer  \194\183  Patreon: patreon.com/cw/chasesommer")
 
-    local credits = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    credits:SetPoint("BOTTOMLEFT", 16, 30)
-    credits:SetWidth(540)
+    local credits = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    credits:SetPoint("TOPLEFT", about, "BOTTOMLEFT", 0, -10)
+    credits:SetWidth(CONTENT_WIDTH - 24)
     credits:SetJustifyH("LEFT")
     credits:SetText("Bundled font: Prototype by Justin Callaghan (mickeyavenue.com).")
 
-    local footer = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    footer:SetPoint("BOTTOMLEFT", 16, 12)
-    footer:SetWidth(540)
+    local footer = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
+    footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    local version = "0.10.2"
+    local version = "0.10.4"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then
@@ -455,10 +499,17 @@ function Opt:Build()
     end
     footer:SetText("RageForge v" .. version .. "  \194\183  Settings auto-save.")
 
+    content._lastBottom = footer
+
+    local function refreshScrollLayout()
+        sizeScrollChild()
+    end
+
     panel.refresh = function()
         for _, c in ipairs(controls) do
             if c._refresh then c._refresh() end
         end
+        refreshScrollLayout()
     end
 
     panel.default = function()
@@ -474,7 +525,7 @@ function Opt:Build()
         end
         restore(ns.Config.db, ns.Config.defaults)
         if ns.Config.ApplyStyle then
-            ns.Config:ApplyStyle(ns.Config.db.barStyle or "ribbon", { silent = true })
+            ns.Config:ApplyStyle(ns.Config.db.barStyle or "blade", { silent = true })
         else
             applyLive()
         end
@@ -483,6 +534,16 @@ function Opt:Build()
 
     panel.okay = function() end
     panel.cancel = function() end
+    panel.OnRefresh = function()
+        if panel.refresh then panel.refresh() end
+    end
+
+    panel:HookScript("OnShow", function()
+        refreshScrollLayout()
+    end)
+    panel:HookScript("OnSizeChanged", function()
+        refreshScrollLayout()
+    end)
 
     registerBlizzardCategory()
 

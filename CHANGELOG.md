@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.4
+
+- Options panel uses a ScrollFrame; credits sit at the end of scroll content
+  (no more footer overlapping Display checkboxes / overflowing the Options frame).
+  Mouse-wheel scrolling works on Forever and TBC.
+- Default bar style for **new installs** is **blade**. Existing SavedVariables
+  keep their chosen style.
+
 ## 0.10.3
 
 - Safe `RegisterEvent` everywhere (`C_EventUtils.IsEventValid` when present,
