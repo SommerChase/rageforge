@@ -52,7 +52,7 @@ C.defaults = {
     -- Visual style: "classic" | "ribbon" | "blade"
     barStyle = "blade",
 
-    -- Warrior frame overlay: "none" | "iron" | "bloodforged"
+    -- Warrior frame overlay: "none" | "iron" | "bloodforged" | "warlord"
     -- Authored for the blade curve; new installs default to iron.
     frameStyle = "iron",
 
@@ -143,12 +143,15 @@ end
 -- Bump SCHEMA_VERSION whenever a default's *value* changes in a way that
 -- should propagate to existing users (e.g. recolor, layout). fillDefaults
 -- alone won't push new values into a user that already has the key.
-C.SCHEMA_VERSION = 11
+C.SCHEMA_VERSION = 12
 
+-- clearance: extra px beyond barWidth/2 so stance / Battle Shout icons
+-- clear the forged rim (matches Media frame outer thickness ~10px scaled).
 C.FRAME_STYLES = {
-    none = { label = "None" },
-    iron = { label = "Iron" },
-    bloodforged = { label = "Bloodforged" },
+    none = { label = "None", clearance = 0 },
+    iron = { label = "Iron", clearance = 12 },
+    bloodforged = { label = "Bloodforged", clearance = 12 },
+    warlord = { label = "Warlord", clearance = 14 },
 }
 
 function C:GetStyle(name)
@@ -162,13 +165,18 @@ function C:ApplyFrameStyle(name, opts)
         return false
     end
     self.db.frameStyle = name
-    if ns.ForeverDisplay and ns.ForeverDisplay.ApplyFrameStyle then
-        ns.ForeverDisplay:ApplyFrameStyle()
-    end
-    if ns.RageBar and ns.RageBar.ApplyFrameStyle then
-        ns.RageBar:ApplyFrameStyle()
-    elseif ns.RageBar and ns.RageBar.ApplyConfig then
-        ns.RageBar:ApplyConfig()
+    -- Clearance changes icon anchors — rebuild geometry when possible.
+    if ns.RageBar and ns.RageBar.Rebuild then
+        ns.RageBar:Rebuild()
+    else
+        if ns.ForeverDisplay and ns.ForeverDisplay.ApplyFrameStyle then
+            ns.ForeverDisplay:ApplyFrameStyle()
+        end
+        if ns.RageBar and ns.RageBar.ApplyFrameStyle then
+            ns.RageBar:ApplyFrameStyle()
+        elseif ns.RageBar and ns.RageBar.ApplyConfig then
+            ns.RageBar:ApplyConfig()
+        end
     end
     if not opts.silent and self.Print then
         self:Print(("frame: %s"):format(self.FRAME_STYLES[name].label))
@@ -262,6 +270,11 @@ function C:Load()
         -- supplies "iron" for missing keys; do not overwrite an existing choice.
     end
 
+    if saved < 12 then
+        -- v12 adds warlord frame + closed caps / vertical fill polish.
+        -- Existing frameStyle choices are kept.
+    end
+
     RageForgeDB._schemaVersion = C.SCHEMA_VERSION
     self.db = RageForgeDB
     return self.db
@@ -306,7 +319,7 @@ local function handleSlash(input)
         C:Print("  /rf stances           toggle stance icon rail")
         C:Print("  /rf ghost             toggle ghost line (post-stance-dance preview)")
         C:Print("  /rf style <name>      classic | ribbon | blade  (then /reload)")
-        C:Print("  /rf frame <name>      none | iron | bloodforged")
+        C:Print("  /rf frame <name>      none | iron | bloodforged | warlord")
         C:Print("  /rf status            show client / secret-value diagnostics")
         return
     end
@@ -330,11 +343,11 @@ local function handleSlash(input)
         local name = (rest or ""):match("^(%S+)") or ""
         if name == "" then
             C:Print(("current frame: %s"):format(tostring(C:Get("frameStyle") or "iron")))
-            C:Print("usage: /rf frame <none|iron|bloodforged>")
+            C:Print("usage: /rf frame <none|iron|bloodforged|warlord>")
             return
         end
         if not C.FRAME_STYLES[name] then
-            C:Print("unknown frame. try: none, iron, bloodforged")
+            C:Print("unknown frame. try: none, iron, bloodforged, warlord")
             return
         end
         C:ApplyFrameStyle(name)

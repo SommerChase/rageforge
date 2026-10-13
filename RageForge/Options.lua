@@ -430,8 +430,9 @@ function Opt:Build()
     frameHelp:SetPoint("TOPLEFT", hFrame, "BOTTOMLEFT", 0, -4)
     frameHelp:SetWidth(CONTENT_WIDTH - 24)
     frameHelp:SetJustifyH("LEFT")
-    frameHelp:SetText("Warrior-forged rim that sits over the bar and softens curve edges. " ..
-        "Iron (default) is steel with bronze accents; Bloodforged is darker with blood-red trim. None hides the rim.")
+    frameHelp:SetText("Closed forged rim over the bar. Iron (default) is simple steel; " ..
+        "Bloodforged is matte/obsidian black iron with molten red-orange ember glow (Blackrock); " ..
+        "Warlord is dark iron with gold trim and class-tan accents. None hides the rim.")
 
     local function applyFrame(name)
         if ns.Config and ns.Config.ApplyFrameStyle then
@@ -439,6 +440,10 @@ function Opt:Build()
         else
             cfg.frameStyle = name
             applyLive()
+        end
+        -- Frame clearance changes icon anchors; rebuild geometry.
+        if ns.RageBar and ns.RageBar.Rebuild then
+            ns.RageBar:Rebuild()
         end
         if panel.refresh then panel.refresh() end
     end
@@ -453,13 +458,19 @@ function Opt:Build()
         function() return cfg.frameStyle or "iron" end,
         applyFrame,
         "bloodforged", "frameStyle")
-    frameBlood:SetPoint("LEFT", frameIron, "RIGHT", 90, 0)
+    frameBlood:SetPoint("LEFT", frameIron, "RIGHT", 70, 0)
+
+    local frameWarlord = makeRadio(content, "Warlord",
+        function() return cfg.frameStyle or "iron" end,
+        applyFrame,
+        "warlord", "frameStyle")
+    frameWarlord:SetPoint("LEFT", frameBlood, "RIGHT", 100, 0)
 
     local frameNone = makeRadio(content, "None",
         function() return cfg.frameStyle or "iron" end,
         applyFrame,
         "none", "frameStyle")
-    frameNone:SetPoint("LEFT", frameBlood, "RIGHT", 110, 0)
+    frameNone:SetPoint("LEFT", frameWarlord, "RIGHT", 90, 0)
 
     -- ===== Display =====
     local h3 = makeHeader(content, "Display", frameIron, -4, -28)
@@ -529,7 +540,7 @@ function Opt:Build()
     footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
     footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    local version = "0.11.0"
+    local version = "0.12.0"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then

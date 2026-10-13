@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.0
+
+- **Closed frame caps** at top and bottom (forged end plates); rails no longer open.
+- **Seamless vertical fill:** StatusBar segments use `VERTICAL` orientation
+  (rage rises up / falls down the curve), solid `SoftFill` (no edge darkening),
+  heavy overlap, and `SetSnapToPixelGrid(false)` / `SetTexelSnappingBias(0)`.
+- **Richer frames:** `Iron` (simple steel), `Bloodforged` (matte/obsidian
+  black iron + molten red-orange ember glow — Blackrock fold-in), new
+  `Warlord` (dark iron + gold trim + warrior tan `#C69B6D` + shield/axe
+  caps). Secret-safe `InnerGlow` StatusBars intensify with rage.
+- **Threshold markers:** deep notches in the frame art; larger outlined labels
+  colored by meaning (25 = TM retain / class tan).
+- **Icon clearance:** stance rail and Battle Shout shift outward by per-frame
+  clearance so they no longer overlap the rim.
+
 ## 0.11.0
 
 - **Forever curve polish:** denser overlapping StatusBar segments with

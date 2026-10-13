@@ -32,15 +32,40 @@ local MEDIA = "Interface\\AddOns\\RageForge\\Media\\"
 local TEX_FRAME = {
     iron = MEDIA .. "FrameIron",
     bloodforged = MEDIA .. "FrameBloodforged",
+    warlord = MEDIA .. "FrameWarlord",
 }
--- Authored SoftTrackCurve / Frame* metrics (blade curve baked into the TGA).
+-- Authored SoftTrackCurve / Frame* metrics (blade curve; t=0 at TGA bottom).
 local TEX_W, TEX_H = 128, 512
-local TEX_PAD = 16
+local TEX_PAD = 20
 local TEX_USABLE = TEX_H - 2 * TEX_PAD
 local TEX_CX = 72
 local TEX_AUTHOR_SCALE = TEX_USABLE / 290
 local TEX_AMP = 22 * TEX_AUTHOR_SCALE
 local TEX_BW = 16 * TEX_AUTHOR_SCALE
+
+-- Threshold label colors by meaning (25 = Tactical Mastery retain).
+local TICK_COLORS = {
+    [15] = { 0.85, 0.78, 0.55 },
+    [25] = { 0.78, 0.61, 0.43 }, -- warrior class tan #C69B6D
+    [50] = { 1.00, 0.62, 0.22 },
+    [75] = { 0.95, 0.28, 0.18 },
+}
+
+local function frameClearancePx()
+    if ns.ForeverDisplay and ns.ForeverDisplay.GetFrameClearance then
+        return ns.ForeverDisplay:GetFrameClearance()
+    end
+    local cfg = ns.Config and ns.Config.db
+    local key = (cfg and cfg.frameStyle) or "iron"
+    local info = ns.Config and ns.Config.FRAME_STYLES and ns.Config.FRAME_STYLES[key]
+    if info and info.clearance then
+        return info.clearance
+    end
+    if key == "none" then
+        return 0
+    end
+    return 12
+end
 
 local function setFont(fs, size, flags)
     if not fs:SetFont(FONT_PATH, size, flags) then
@@ -304,13 +329,16 @@ function Bar:Build()
     resolveBattleShoutName()
 
     local cfg = ns.Config.db
-    local leftGutter = 66 -- stance rail + left-side dump hint breathing room
+    local clearance = frameClearancePx()
+    -- Stance rail + dump hint + frame rim clearance so icons never clip the forge.
+    local leftGutter = 66 + clearance
     local barCenterlineX = leftGutter + cfg.barCurveAmplitude + cfg.barWidth * 0.5
-    local containerWidth = barCenterlineX + cfg.barWidth * 0.5 + 36 -- right side: ticks + labels
+    local containerWidth = barCenterlineX + cfg.barWidth * 0.5 + clearance + 48
     local containerHeight = cfg.barHeight + 64
     local barAnchorY = 36
 
     container = CreateFrame("Frame", "RageForgeBar", UIParent)
+    container._frameClearance = clearance
     container:SetSize(containerWidth, containerHeight)
     container:SetPoint(cfg.position.point, UIParent, cfg.position.relPoint, cfg.position.x, cfg.position.y)
     container:SetScale(cfg.scale)
@@ -388,23 +416,24 @@ function Bar:Build()
         stanceArtifacts[i] = { icon = icon, border = border, formIndex = nil }
     end
 
-    -- Threshold ticks. Per user feedback (v0.2): ticks live OUTSIDE the bar
-    -- to the right (where the number sits), not crossing through the fill.
+    -- Threshold ticks live OUTSIDE the bar to the right. Bright notches +
+    -- large outlined labels; 25 uses warrior class tan (TM retain).
     for _, rageValue in ipairs(cfg.thresholdTicks) do
         local frac = rageValue / 100
         local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
-        local rightEdgeX = barCenterlineX + xOff + cfg.barWidth * 0.5
+        local rightEdgeX = barCenterlineX + xOff + cfg.barWidth * 0.5 + clearance
+        local tc = TICK_COLORS[rageValue] or { 0.90, 0.82, 0.55 }
 
-        local tick = container:CreateTexture(nil, "OVERLAY")
-        tick:SetSize(7, 1)
-        tick:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", rightEdgeX + 2, barAnchorY + frac * cfg.barHeight)
-        tick:SetColorTexture(0.85, 0.78, 0.55, 0.55)
+        local tick = container:CreateTexture(nil, "OVERLAY", nil, 3)
+        tick:SetSize(12, 3)
+        tick:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", rightEdgeX + 2, barAnchorY + frac * cfg.barHeight - 1)
+        tick:SetColorTexture(tc[1], tc[2], tc[3], 0.95)
 
         local label = container:CreateFontString(nil, "OVERLAY")
-        setFont(label, 11, "OUTLINE")
-        label:SetText(rageValue)
-        label:SetPoint("LEFT", tick, "RIGHT", 3, 0)
-        label:SetTextColor(0.78, 0.72, 0.55, 0.95)
+        setFont(label, 14, "OUTLINE")
+        label:SetText(tostring(rageValue))
+        label:SetPoint("LEFT", tick, "RIGHT", 4, 0)
+        label:SetTextColor(tc[1], tc[2], tc[3], 1)
 
         tickArtifacts[#tickArtifacts + 1] = { tick = tick, label = label }
     end
@@ -434,11 +463,14 @@ function Bar:Build()
     -- is healthy; shown/flashing when missing or under the configured warning
     -- threshold.
     local shoutSize = cfg.battleShoutIconSize or 32
-    local bottomLeftEdgeX = barCenterlineX + curveOffset(0, cfg.barCurveAmplitude, cfg.barCurveDirection) - cfg.barWidth * 0.5
+    local bottomLeftEdgeX = barCenterlineX
+        + curveOffset(0, cfg.barCurveAmplitude, cfg.barCurveDirection)
+        - cfg.barWidth * 0.5
+        - clearance
 
     battleShoutFrame = CreateFrame("Frame", nil, container)
     battleShoutFrame:SetSize(shoutSize, shoutSize)
-    battleShoutFrame:SetPoint("BOTTOMRIGHT", container, "BOTTOMLEFT", bottomLeftEdgeX - 10, barAnchorY)
+    battleShoutFrame:SetPoint("BOTTOMRIGHT", container, "BOTTOMLEFT", bottomLeftEdgeX - 12, barAnchorY)
     battleShoutFrame:Hide()
 
     battleShoutIcon = battleShoutFrame:CreateTexture(nil, "ARTWORK")
@@ -630,9 +662,10 @@ function Bar:RefreshStanceIcons()
             local iconY = railCenterY + ((count + 1) * 0.5 - slot) * iconSize
             local frac = clamp((iconY - barAnchorY) / math.max(1, cfg.barHeight), 0, 1)
             local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
-            local leftEdgeX = snapPixel(barCenterlineX + xOff - cfg.barWidth * 0.5)
+            local clearance = container._frameClearance or frameClearancePx()
+            local leftEdgeX = snapPixel(barCenterlineX + xOff - cfg.barWidth * 0.5 - clearance)
             icon:ClearAllPoints()
-            icon:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX, iconY)
+            icon:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX - 2, iconY)
             icon:Show()
 
             art.formIndex = info.index

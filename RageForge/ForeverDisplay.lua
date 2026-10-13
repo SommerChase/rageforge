@@ -2,17 +2,15 @@
 -- Forever / Mainline-family curved rage fill that stays secret-safe in combat.
 -- Loaded only by RageForge_Forever.toc / RageForge_Camelot.toc.
 --
--- Technique (confirmed, warcraft.wiki.gg Secret_Values + StatusBar APIs):
---   StatusBar:SetValue / SetMinMaxValues accept secret numbers (BarValue aspect).
---   Tainted Lua cannot compare or arithmetic on secret UnitPower, but the
---   engine can. So we build the curve as a dense stack of overlapping
---   StatusBar segments along the same parabola as the Classic slice bar.
---   Soft-edged SoftFill texture + overlap hides seams; a single SoftTrackCurve
---   texture paints the empty track; optional Iron/Bloodforged frame overlays
---   mask residual jaggies.
---
--- Coloring uses each segment's baked mid-rage (a plain construction-time
--- number) against the zone palette -- not the live secret power.
+-- Technique (warcraft.wiki.gg Secret_Values + StatusBar BarValue aspect):
+--   Dense stack of VERTICAL StatusBars along the blade parabola. Each owns a
+--   plain rage sub-range via SetMinMaxValues(low, high) and receives (possibly
+--   secret) UnitPower through SetValue. Orientation VERTICAL so fill rises
+--   up the curve as rage grows (no sideways sweep). Solid SoftFill + heavy
+--   overlap + disabled texel snapping removes horizontal seams. SoftTrackCurve
+--   is the empty track; Iron/Bloodforged/Warlord frames (closed end caps)
+--   mask residual edge jaggies. Optional InnerGlow StatusBars intensify with
+--   rage (also secret-safe).
 
 local ADDON_NAME, ns = ...
 ns.ForeverDisplay = {}
@@ -21,14 +19,16 @@ local FD = ns.ForeverDisplay
 local MEDIA = "Interface\\AddOns\\RageForge\\Media\\"
 local TEX_SOFT_FILL = MEDIA .. "SoftFill"
 local TEX_TRACK_CURVE = MEDIA .. "SoftTrackCurve"
+local TEX_INNER_GLOW = MEDIA .. "InnerGlow"
 local TEX_FRAME = {
     iron = MEDIA .. "FrameIron",
     bloodforged = MEDIA .. "FrameBloodforged",
+    warlord = MEDIA .. "FrameWarlord",
 }
 
--- Authored texture metrics (see tools / Media generator). Blade curve baked in.
+-- Authored texture metrics (blade curve; t=0 at bottom of TGA).
 local TEX_W, TEX_H = 128, 512
-local TEX_PAD = 16
+local TEX_PAD = 20
 local TEX_USABLE = TEX_H - 2 * TEX_PAD
 local TEX_CX = 72
 local TEX_AUTHOR_SCALE = TEX_USABLE / 290
@@ -36,9 +36,8 @@ local TEX_AMP = 22 * TEX_AUTHOR_SCALE
 local TEX_BW = 16 * TEX_AUTHOR_SCALE
 
 local segments = {}
-local tipGlow
+local glowSegments = {}
 local ghostGate
-local ghostNotchTex
 local trackTex
 local frameTex
 local built = false
@@ -75,7 +74,6 @@ local function zoneColorForRage(rageValue, retainedRage, zones)
     end
 end
 
--- Same parabola as RageBar.lua (shared visual language).
 local function curveOffset(t, amplitude, direction)
     local p = 1 - (2 * t - 1) ^ 2
     return amplitude * p * direction
@@ -92,6 +90,35 @@ local function interpolationMode()
     return nil
 end
 
+-- Kill texel snapping / edge shimmer that shows as horizontal seams.
+local function disableTexelSnap(tex)
+    if not tex then return end
+    if tex.SetSnapToPixelGrid then
+        tex:SetSnapToPixelGrid(false)
+    end
+    if tex.SetTexelSnappingBias then
+        tex:SetTexelSnappingBias(0)
+    end
+    if tex.SetHorizTile then tex:SetHorizTile(false) end
+    if tex.SetVertTile then tex:SetVertTile(false) end
+end
+
+local function styleStatusBar(bar, texturePath)
+    bar:SetStatusBarTexture(texturePath)
+    if bar.SetBackdrop then
+        bar:SetBackdrop(nil)
+    end
+    local tex = bar:GetStatusBarTexture()
+    disableTexelSnap(tex)
+    if bar.SetSnapToPixelGrid then
+        bar:SetSnapToPixelGrid(false)
+    end
+    if bar.SetTexelSnappingBias then
+        bar:SetTexelSnappingBias(0)
+    end
+    return tex
+end
+
 function FD:IsAvailable()
     return type(CreateFrame) == "function"
 end
@@ -100,26 +127,35 @@ function FD:IsActive()
     return active
 end
 
+-- Outer rim clearance in screen px (icons must sit outside this).
+function FD:GetFrameClearance()
+    local cfg = ns.Config and ns.Config.db
+    local key = (cfg and cfg.frameStyle) or "iron"
+    local info = ns.Config and ns.Config.FRAME_STYLES and ns.Config.FRAME_STYLES[key]
+    if info and info.clearance then
+        return info.clearance
+    end
+    if key == "none" then
+        return 0
+    end
+    return 12
+end
+
 local function clearChildren()
     for _, bar in ipairs(segments) do
         bar:Hide()
         bar:SetParent(nil)
     end
     wipe(segments)
-    if tipGlow then
-        tipGlow:Hide()
-        tipGlow:SetParent(nil)
-        tipGlow = nil
+    for _, bar in ipairs(glowSegments) do
+        bar:Hide()
+        bar:SetParent(nil)
     end
+    wipe(glowSegments)
     if ghostGate then
         ghostGate:Hide()
         ghostGate:SetParent(nil)
         ghostGate = nil
-    end
-    if ghostNotchTex then
-        ghostNotchTex:Hide()
-        ghostNotchTex:SetParent(nil)
-        ghostNotchTex = nil
     end
     if trackTex then
         trackTex:Hide()
@@ -134,22 +170,36 @@ local function clearChildren()
 end
 
 local function placeCurveArt(tex, anchorX, anchorY, width, height, amplitude)
-    -- Non-uniform scale so authored blade art matches live style geometry.
     local scaleY = height / TEX_USABLE
     local scaleX = amplitude / TEX_AMP
     if width and TEX_BW > 0 then
-        -- Prefer width match when amp is tiny; blend so both land close.
         local scaleW = width / TEX_BW
         scaleX = (scaleX * 0.65) + (scaleW * 0.35)
     end
-    local dispW = TEX_W * scaleX
-    local dispH = TEX_H * scaleY
-    local x = snapPixel(anchorX - TEX_CX * scaleX)
-    local y = snapPixel(anchorY - TEX_PAD * scaleY)
-    tex:SetSize(dispW, dispH)
+    tex:SetSize(TEX_W * scaleX, TEX_H * scaleY)
     tex:ClearAllPoints()
-    tex:SetPoint("BOTTOMLEFT", parentFrame, "BOTTOMLEFT", x, y)
+    tex:SetPoint(
+        "BOTTOMLEFT",
+        parentFrame,
+        "BOTTOMLEFT",
+        snapPixel(anchorX - TEX_CX * scaleX),
+        snapPixel(anchorY - TEX_PAD * scaleY)
+    )
+    disableTexelSnap(tex)
     return scaleX, scaleY
+end
+
+local function glowColorsForStyle(key)
+    -- secret-safe baked tints; intensity comes from StatusBar fill amount
+    if key == "bloodforged" then
+        -- Blackrock fold-in: molten ember on obsidian iron
+        return 1.0, 0.28, 0.06, 0.95
+    elseif key == "warlord" then
+        return 0.85, 0.65, 0.35, 0.70  -- class-tan / gold
+    elseif key == "iron" then
+        return 0.75, 0.70, 0.55, 0.45
+    end
+    return 1, 1, 1, 0
 end
 
 local function applyFrameStyle()
@@ -165,9 +215,23 @@ local function applyFrameStyle()
     else
         frameTex:Hide()
     end
+    local gr, gg, gb, ga = glowColorsForStyle(key)
+    for _, bar in ipairs(glowSegments) do
+        if key == "none" then
+            bar:Hide()
+        else
+            bar:Show()
+            if bar.SetStatusBarColor then
+                bar:SetStatusBarColor(gr, gg, gb, ga)
+            end
+            local tex = bar:GetStatusBarTexture()
+            if tex then
+                tex:SetVertexColor(gr, gg, gb, ga)
+            end
+        end
+    end
 end
 
--- Build / rebuild the curved StatusBar stack. Geometry mirrors RageBar.
 function FD:Build(parent, width, height, anchorX, anchorY)
     if not parent or not self:IsAvailable() then
         return
@@ -195,18 +259,18 @@ function FD:Build(parent, width, height, anchorX, anchorY)
     local zones = cfg.zones
     local ease = interpolationMode()
 
-    -- Single smooth background track (curved art, not per-row segments).
     trackTex = parent:CreateTexture(nil, "BACKGROUND", nil, 0)
     trackTex:SetTexture(TEX_TRACK_CURVE)
-    trackTex:SetVertexColor(1, 1, 1, 1)
     placeCurveArt(trackTex, anchorX, anchorY, stroke, height, amp)
     trackTex:Show()
 
-    -- Dense overlapping StatusBars. ~2 segments per rage-pixel of height,
-    -- capped for sanity. Overlap + SoftFill alpha feather kills seams.
-    local numSeg = math.min(220, math.max(80, math.floor(height * 1.75)))
-    local segH = math.max(2, math.ceil((height / numSeg) * 2.4))
-    local centerWidth = math.max(2, stroke)
+    -- Dense VERTICAL StatusBars. Spacing ~0.45px of bar height; each segment
+    -- is ~3x taller so neighbors fully overlap — solid SoftFill has no edge
+    -- darkening, so overlapped regions stay continuous (no striations).
+    local numSeg = math.min(280, math.max(120, math.floor(height * 2.2)))
+    local step = height / numSeg
+    local segH = math.max(3, math.ceil(step * 3.2))
+    local centerWidth = math.max(2, stroke + 1)
 
     for i = 1, numSeg do
         local t = (i - 0.5) / numSeg
@@ -214,18 +278,15 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         local rageHigh = (i / numSeg) * 100
         local midRage = (rageLow + rageHigh) * 0.5
         local xOff = curveOffset(t, amp, dir)
-        local xCenter = snapPixel(anchorX + xOff)
-        local y = snapPixel(anchorY + t * height - segH * 0.5)
+        local xCenter = anchorX + xOff
+        -- Do NOT snap segment Y — snapping caused visible seam ladders.
+        local y = anchorY + t * height - segH * 0.5
 
         local bar = CreateFrame("StatusBar", nil, parent)
         bar:SetSize(centerWidth, segH)
         bar:SetPoint("BOTTOM", parent, "BOTTOMLEFT", xCenter, y)
-        bar:SetOrientation("HORIZONTAL")
-        bar:SetStatusBarTexture(TEX_SOFT_FILL)
-        -- No border / backdrop -- SoftFill carries its own edge alpha.
-        if bar.SetBackdrop then
-            bar:SetBackdrop(nil)
-        end
+        bar:SetOrientation("VERTICAL")
+        local tex = styleStatusBar(bar, TEX_SOFT_FILL)
         if ease then
             bar:SetMinMaxValues(rageLow, rageHigh, ease)
         else
@@ -234,17 +295,11 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         bar:SetValue(0)
 
         local r, g, b, a = zoneColorForRage(midRage, retained, zones)
-        -- Slight vertical gradient bias: brighter toward mid-bar tip of each band.
-        local tipBias = 0.92 + 0.08 * (1 - math.abs(0.5 - (i / numSeg)) * 2)
-        r, g, b = r * tipBias, g * tipBias, b * tipBias
         if bar.SetStatusBarColor then
             bar:SetStatusBarColor(r, g, b, a or 1)
         end
-        local tex = bar:GetStatusBarTexture()
         if tex then
             tex:SetVertexColor(r, g, b, a or 1)
-            if tex.SetHorizTile then tex:SetHorizTile(false) end
-            if tex.SetVertTile then tex:SetVertTile(false) end
         end
 
         bar._rageLow = rageLow
@@ -253,13 +308,40 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         segments[i] = bar
     end
 
-    -- Optional warrior frame overlay (masks residual segment edges).
+    -- Inner-edge glow: thinner VERTICAL StatusBars just inside the left rim.
+    -- Secret-safe: engine fills them with the same power value.
+    local glowCount = math.min(80, math.max(40, math.floor(height / 4)))
+    local glowH = math.max(4, math.ceil((height / glowCount) * 2.5))
+    for i = 1, glowCount do
+        local t = (i - 0.5) / glowCount
+        local rageLow = ((i - 1) / glowCount) * 100
+        local rageHigh = (i / glowCount) * 100
+        local xOff = curveOffset(t, amp, dir)
+        local leftX = anchorX + xOff - stroke * 0.5 + 1
+        local y = anchorY + t * height - glowH * 0.5
+
+        local gbar = CreateFrame("StatusBar", nil, parent)
+        gbar:SetSize(3, glowH)
+        gbar:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", leftX, y)
+        gbar:SetFrameLevel((parent:GetFrameLevel() or 0) + 3)
+        gbar:SetOrientation("VERTICAL")
+        local gtex = styleStatusBar(gbar, TEX_INNER_GLOW)
+        if gtex and gtex.SetBlendMode then
+            gtex:SetBlendMode("ADD")
+        end
+        if ease then
+            gbar:SetMinMaxValues(rageLow, rageHigh, ease)
+        else
+            gbar:SetMinMaxValues(rageLow, rageHigh)
+        end
+        gbar:SetValue(0)
+        glowSegments[i] = gbar
+    end
+
     frameTex = parent:CreateTexture(nil, "OVERLAY", nil, 5)
     placeCurveArt(frameTex, anchorX, anchorY, stroke, height, amp)
     applyFrameStyle()
 
-    -- Ghost notch visibility gate: StatusBar min=retained does the
-    -- "currentRage > retained" compare at C++ level.
     if cfg.showGhostLine then
         local frac = retained / 100
         local xOff = curveOffset(frac, amp, dir)
@@ -271,7 +353,7 @@ function FD:Build(parent, width, height, anchorX, anchorY)
         ghostGate:SetPoint("CENTER", parent, "BOTTOMLEFT", leftEdgeX, yPos)
         ghostGate:SetFrameLevel((parent:GetFrameLevel() or 0) + 6)
         ghostGate:SetOrientation("VERTICAL")
-        ghostGate:SetStatusBarTexture(TEX_SOFT_FILL)
+        styleStatusBar(ghostGate, TEX_SOFT_FILL)
         local gc = cfg.ghostLineColor
         if ghostGate.SetStatusBarColor then
             ghostGate:SetStatusBarColor(gc[1], gc[2], gc[3], gc[4] or 0.9)
@@ -324,7 +406,15 @@ function FD:Update(power, powerMax, powerType)
             end
         end
     end
-
+    for _, bar in ipairs(glowSegments) do
+        if power ~= nil then
+            if ease then
+                bar:SetValue(power, ease)
+            else
+                bar:SetValue(power)
+            end
+        end
+    end
     if ghostGate and power ~= nil then
         if ease then
             ghostGate:SetValue(power, ease)
@@ -341,11 +431,8 @@ function FD:RecolorFromConfig()
     local cfg = ns.Config.db
     local retained = cfg.tacticalMasteryRetained or 25
     local zones = cfg.zones
-    local n = #segments
-    for i, bar in ipairs(segments) do
+    for _, bar in ipairs(segments) do
         local r, g, b, a = zoneColorForRage(bar._midRage, retained, zones)
-        local tipBias = 0.92 + 0.08 * (1 - math.abs(0.5 - (i / n)) * 2)
-        r, g, b = r * tipBias, g * tipBias, b * tipBias
         if bar.SetStatusBarColor then
             bar:SetStatusBarColor(r, g, b, a or 1)
         end
