@@ -1,0 +1,25 @@
+## Interface: 16001
+## Title: RageForge
+## Notes: Smart rage display for stance-dancing warriors on WoW Forever. Secret-safe combat fill when rage is restricted.
+## Author: Chase Sommer
+## Version: 0.14.0
+## X-Curse-Project-ID: 0
+## SavedVariables: RageForgeDB
+## DefaultState: enabled
+## Category: Combat
+## IconTexture: Interface\Icons\Ability_Warrior_OffensiveStance
+## AddonCompartmentFunc: RageForge_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: RageForge_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: RageForge_OnAddonCompartmentLeave
+
+# Replace X-Curse-Project-ID 0 with the CurseForge project id before tagging a release.
+# Camelot = Forever's internal game type on beta. Blizzard may rename before
+# launch (Nov 4 2026); keep this TOC as an alias of RageForge_Forever.toc.
+# Interface 16001 = Forever Beta (Warcraft Wiki). Confirm with:
+#   /dump select(4, GetBuildInfo())
+Compat.lua
+Config.lua
+ForeverDisplay.lua
+Core.lua
+RageBar.lua
+Options.lua

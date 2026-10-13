@@ -28,6 +28,40 @@ local Bar = ns.RageBar
 -- a built-in fallback if the file is ever missing on disk.
 local FONT_PATH = "Interface\\AddOns\\RageForge\\Fonts\\Prototype.ttf"
 local FALLBACK_FONT_PATH = "Fonts\\SKURRI.TTF"
+local MEDIA = "Interface\\AddOns\\RageForge\\Media\\"
+-- Authored SoftTrackCurve / Frame* metrics (blade curve; t=0 at TGA bottom).
+-- 2x the 290px bar so a feathered ~1.5px accent stays continuous.
+local TEX_W, TEX_H = 512, 640
+local TEX_PAD = 30
+local TEX_USABLE = TEX_H - 2 * TEX_PAD
+local TEX_CX = 256
+local TEX_AUTHOR_SCALE = TEX_USABLE / 290
+local TEX_AMP = 22 * TEX_AUTHOR_SCALE
+local TEX_BW = 16 * TEX_AUTHOR_SCALE
+
+-- Threshold label colors by meaning (25 = Tactical Mastery retain).
+local TICK_COLORS = {
+    [15] = { 0.85, 0.78, 0.55 },
+    [25] = { 0.78, 0.61, 0.43 }, -- warrior class tan #C69B6D
+    [50] = { 1.00, 0.62, 0.22 },
+    [75] = { 0.95, 0.28, 0.18 },
+}
+
+local function frameClearancePx()
+    if ns.ForeverDisplay and ns.ForeverDisplay.GetFrameClearance then
+        return ns.ForeverDisplay:GetFrameClearance()
+    end
+    local cfg = ns.Config and ns.Config.db
+    local key = (cfg and cfg.frameStyle) or "none"
+    local info = ns.Config and ns.Config.FRAME_STYLES and ns.Config.FRAME_STYLES[key]
+    if info and info.clearance then
+        return info.clearance
+    end
+    if key == "none" then
+        return 0
+    end
+    return 12
+end
 
 local function setFont(fs, size, flags)
     if not fs:SetFont(FONT_PATH, size, flags) then
@@ -46,6 +80,7 @@ local stanceArtifacts = {} -- cropped stance icons following the bar's left edge
 local ghostLine         -- horizontal line left of the bar at retained level
 local ghostNotch        -- bright notch ON the bar's left edge at retained level
 local dumpHintFS        -- "-X" label showing rage cost of dancing right now
+local classicFrameTex   -- Iron/Bloodforged overlay when ForeverDisplay is absent
 local battleShoutFrame
 local battleShoutIcon
 local battleShoutBorder
@@ -54,8 +89,64 @@ local capGlow
 local numberFS
 local labelFS
 
+local function snapPixel(v)
+    return math.floor(v + 0.5)
+end
+
+local function setCurveTexture(tex, path)
+    if not tex or not path then
+        return
+    end
+    local ok = pcall(tex.SetTexture, tex, path, "CLAMP", "CLAMP", "TRILINEAR")
+    if not ok then
+        tex:SetTexture(path)
+    end
+    if tex.SetSnapToPixelGrid then
+        tex:SetSnapToPixelGrid(false)
+    end
+    if tex.SetTexelSnappingBias then
+        tex:SetTexelSnappingBias(0)
+    end
+end
+
+local function placeCurveArt(tex, anchorX, anchorY, width, height, amplitude)
+    local scaleY = height / TEX_USABLE
+    local scaleX = amplitude / TEX_AMP
+    if width and TEX_BW > 0 then
+        local scaleW = width / TEX_BW
+        scaleX = (scaleX * 0.65) + (scaleW * 0.35)
+    end
+    tex:SetSize(TEX_W * scaleX, TEX_H * scaleY)
+    tex:ClearAllPoints()
+    tex:SetPoint(
+        "BOTTOMLEFT",
+        container,
+        "BOTTOMLEFT",
+        snapPixel(anchorX - TEX_CX * scaleX),
+        snapPixel(anchorY - TEX_PAD * scaleY)
+    )
+end
+
+local function applyClassicFrameStyle()
+    if not classicFrameTex then
+        return
+    end
+    local cfg = ns.Config.db
+    local path = ns.Config.FrameTexture and ns.Config:FrameTexture(cfg.frameStyle or "none") or nil
+    if path then
+        setCurveTexture(classicFrameTex, path)
+        classicFrameTex:Show()
+    else
+        classicFrameTex:Hide()
+    end
+end
+
 local displayedRage = 0
 local currentRage = 0
+-- Bar scale until UnitPowerMax returns a number. No Forever beta source
+-- checked states the base rage maximum. Boundless Rage (+10/+20/+30 while
+-- it was in the Fury tree) was removed in a later beta note, and that note
+-- does not publish the cap left behind.
 local maxRage = 100
 local activeStance = 0
 local battleShoutVisible = false
@@ -65,16 +156,19 @@ local battleShoutWasFound = false
 local battleShoutDurationStartedAt = nil
 local battleShoutLastDuration = nil
 local auraCheckElapsed = 0
-local inCombat = false
 
-local STANCES = {
-    { texture = "Interface\\Icons\\Ability_Warrior_OffensiveStance" },
-    { texture = "Interface\\Icons\\Ability_Warrior_DefensiveStance" },
-    { texture = "Interface\\Icons\\Ability_Racial_Avatar" },
+-- Fallback textures keyed by stance spellID when GetShapeshiftFormInfo
+-- returns a numeric fileID we still want a known path, or for debugging.
+-- Not used to decide which stances are shown -- learning state comes from
+-- GetNumShapeshiftForms / GetShapeshiftFormInfo (+ IsSpellKnown when present).
+local STANCE_FALLBACK_BY_SPELL = {
+    [2457] = "Interface\\Icons\\Ability_Warrior_OffensiveStance", -- Battle
+    [71]   = "Interface\\Icons\\Ability_Warrior_DefensiveStance", -- Defensive
+    [2458] = "Interface\\Icons\\Ability_Racial_Avatar",           -- Berserker
 }
+local MAX_STANCE_SLOTS = 3
 
 local BATTLE_SHOUT_SPELL_ID = 6673
-local BATTLE_SHOUT_NAME = (GetSpellInfo and GetSpellInfo(BATTLE_SHOUT_SPELL_ID)) or "Battle Shout"
 local BATTLE_SHOUT_ICON = "Interface\\Icons\\Ability_Warrior_BattleShout"
 local BATTLE_SHOUT_ICON_LOWER = string.lower(BATTLE_SHOUT_ICON)
 local BATTLE_SHOUT_SPELL_IDS = {
@@ -88,17 +182,25 @@ local BATTLE_SHOUT_SPELL_IDS = {
     [2048] = true,
 }
 
--- Square-crop the icon and rotate the sampled texture so the spell icon's
--- top edge points left on screen. WoW's 8-argument SetTexCoord maps the
--- sampled image coordinates to the region corners: UL, LL, UR, LR.
+-- Resolved after Compat loads (TOC order). Forever is missing GetSpellInfo.
+local BATTLE_SHOUT_NAME = "Battle Shout"
+local rageSecretMode = false
+local lastAccessibleRage = 0
+
+local function resolveBattleShoutName()
+    if ns.Compat and ns.Compat.GetSpellName then
+        BATTLE_SHOUT_NAME = ns.Compat.GetSpellName(BATTLE_SHOUT_SPELL_ID) or BATTLE_SHOUT_NAME
+    elseif type(GetSpellInfo) == "function" then
+        BATTLE_SHOUT_NAME = GetSpellInfo(BATTLE_SHOUT_SPELL_ID) or BATTLE_SHOUT_NAME
+    end
+end
+
+-- Square-crop only. Icons stay upright (rotation 0); positions are unchanged.
 local function setStanceIconTexCoord(icon)
-    local l, r, t, b = 0.08, 0.92, 0.08, 0.92
-    icon:SetTexCoord(
-        r, t,  -- upper-left region corner samples top-right of source
-        l, t,  -- lower-left region corner samples top-left of source
-        r, b,  -- upper-right region corner samples bottom-right of source
-        l, b   -- lower-right region corner samples bottom-left of source
-    )
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if icon.SetRotation then
+        icon:SetRotation(0)
+    end
 end
 
 local function clamp(v, minVal, maxVal)
@@ -118,10 +220,6 @@ local function mixColor(a, b, t)
         lerp(a[2], b[2], t),
         lerp(a[3], b[3], t),
         lerp(a[4], b[4], t)
-end
-
-local function snapPixel(v)
-    return math.floor(v + 0.5)
 end
 
 local function isBattleShoutAura(name, icon)
@@ -181,17 +279,77 @@ local function curveOffset(t, amplitude, direction)
     return amplitude * p * direction
 end
 
+local function setSlicesShown(shown)
+    for i, s in ipairs(slices) do
+        if shown then
+            s:Show()
+            if sliceLeftFeathers[i] then sliceLeftFeathers[i]:Show() end
+            if sliceRightFeathers[i] then sliceRightFeathers[i]:Show() end
+        else
+            s:Hide()
+            if sliceLeftFeathers[i] then sliceLeftFeathers[i]:Hide() end
+            if sliceRightFeathers[i] then sliceRightFeathers[i]:Hide() end
+        end
+    end
+end
+
+-- Tear down and rebuild geometry (style / width / height / curve changes).
+-- Prefer this over /reload when switching Ribbon / Blade / Classic.
+function Bar:Rebuild()
+    if container then
+        container:Hide()
+        container:SetParent(nil)
+        container = nil
+    end
+
+    wipe(slices)
+    wipe(sliceLeftFeathers)
+    wipe(sliceRightFeathers)
+    wipe(sliceMidRage)
+    wipe(tickArtifacts)
+    wipe(stanceArtifacts)
+
+    ghostLine = nil
+    ghostNotch = nil
+    dumpHintFS = nil
+    classicFrameTex = nil
+    battleShoutFrame = nil
+    battleShoutIcon = nil
+    battleShoutBorder = nil
+    battleShoutTimerFS = nil
+    capGlow = nil
+    numberFS = nil
+    labelFS = nil
+    rageSecretMode = false
+
+    if ns.ForeverDisplay then
+        -- Force ForeverDisplay to treat the next Build as fresh.
+        if ns.ForeverDisplay.Rebuild then
+            -- parent cleared; Build() below recreates against the new container.
+        end
+    end
+
+    self:Build()
+    self:Update()
+    return true
+end
+
 function Bar:Build()
     if container then return end
 
+    resolveBattleShoutName()
+
     local cfg = ns.Config.db
-    local leftGutter = 66 -- stance rail + left-side dump hint breathing room
+    local clearance = frameClearancePx()
+    -- Stance rail + dump hint + frame rim clearance so icons never clip the forge.
+    local leftGutter = 66 + clearance
     local barCenterlineX = leftGutter + cfg.barCurveAmplitude + cfg.barWidth * 0.5
-    local containerWidth = barCenterlineX + cfg.barWidth * 0.5 + 36 -- right side: ticks + labels
+    local containerWidth = barCenterlineX + cfg.barWidth * 0.5 + clearance + 48
     local containerHeight = cfg.barHeight + 64
     local barAnchorY = 36
 
     container = CreateFrame("Frame", "RageForgeBar", UIParent)
+    container._frameClearance = clearance
     container:SetSize(containerWidth, containerHeight)
     container:SetPoint(cfg.position.point, UIParent, cfg.position.relPoint, cfg.position.x, cfg.position.y)
     container:SetScale(cfg.scale)
@@ -199,10 +357,12 @@ function Bar:Build()
     container:SetClampedToScreen(true)
     container:EnableMouse(not cfg.locked)
     container:RegisterForDrag("LeftButton")
-    container:SetScript("OnDragStart", function(self) if not cfg.locked then self:StartMoving() end end)
-    container:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
+    container:SetScript("OnDragStart", function(frame)
+        if not cfg.locked then frame:StartMoving() end
+    end)
+    container:SetScript("OnDragStop", function(frame)
+        frame:StopMovingOrSizing()
+        local point, _, relPoint, x, y = frame:GetPoint()
         cfg.position = { point = point, relPoint = relPoint, x = x, y = y }
     end)
 
@@ -242,24 +402,19 @@ function Bar:Build()
         sliceMidRage[i] = t * 100
     end
 
-    -- Stance rail. Icons are square-cropped, rotated, and packed into a
-    -- tight vertical strip. Each icon's right edge touches the bar's left
-    -- edge, which reads as the spell icon's bottom edge touching the bar
-    -- after rotation.
+    -- Stance rail slots (max 3). Visibility + texture + packed layout are
+    -- driven by learned shapeshift forms in RefreshStanceIcons -- never by
+    -- hardcoded level checks.
     local iconSize = cfg.stanceIconSize or 24
     local railCenterY = snapPixel(barAnchorY + cfg.barHeight * 0.50)
-    for i, stance in ipairs(STANCES) do
-        local iconY = railCenterY + (2 - i) * iconSize
-        local frac = (iconY - barAnchorY) / cfg.barHeight
-        local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
-        local leftEdgeX = snapPixel(barCenterlineX + xOff - cfg.barWidth * 0.5)
-
+    container._railCenterY = railCenterY
+    container._stanceIconSize = iconSize
+    for i = 1, MAX_STANCE_SLOTS do
         local icon = container:CreateTexture(nil, "OVERLAY", nil, 1)
-        icon:SetTexture(stance.texture)
         icon:SetSize(iconSize, iconSize)
         setStanceIconTexCoord(icon)
-        icon:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX, iconY)
         icon:SetAlpha(1)
+        icon:Hide()
 
         local border = container:CreateTexture(nil, "OVERLAY", nil, 2)
         border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
@@ -269,26 +424,27 @@ function Bar:Build()
         border:SetVertexColor(1.0, 0.82, 0.18, 1.0)
         border:Hide()
 
-        stanceArtifacts[i] = { icon = icon, border = border }
+        stanceArtifacts[i] = { icon = icon, border = border, formIndex = nil }
     end
 
-    -- Threshold ticks. Per user feedback (v0.2): ticks live OUTSIDE the bar
-    -- to the right (where the number sits), not crossing through the fill.
+    -- Threshold ticks live OUTSIDE the bar to the right. Bright notches +
+    -- large outlined labels; 25 uses warrior class tan (TM retain).
     for _, rageValue in ipairs(cfg.thresholdTicks) do
         local frac = rageValue / 100
         local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
-        local rightEdgeX = barCenterlineX + xOff + cfg.barWidth * 0.5
+        local rightEdgeX = barCenterlineX + xOff + cfg.barWidth * 0.5 + clearance
+        local tc = TICK_COLORS[rageValue] or { 0.90, 0.82, 0.55 }
 
-        local tick = container:CreateTexture(nil, "OVERLAY")
-        tick:SetSize(7, 1)
-        tick:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", rightEdgeX + 2, barAnchorY + frac * cfg.barHeight)
-        tick:SetColorTexture(0.85, 0.78, 0.55, 0.55)
+        local tick = container:CreateTexture(nil, "OVERLAY", nil, 3)
+        tick:SetSize(12, 3)
+        tick:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", rightEdgeX + 2, barAnchorY + frac * cfg.barHeight - 1)
+        tick:SetColorTexture(tc[1], tc[2], tc[3], 0.95)
 
         local label = container:CreateFontString(nil, "OVERLAY")
-        setFont(label, 11, "OUTLINE")
-        label:SetText(rageValue)
-        label:SetPoint("LEFT", tick, "RIGHT", 3, 0)
-        label:SetTextColor(0.78, 0.72, 0.55, 0.95)
+        setFont(label, 14, "OUTLINE")
+        label:SetText(tostring(rageValue))
+        label:SetPoint("LEFT", tick, "RIGHT", 4, 0)
+        label:SetTextColor(tc[1], tc[2], tc[3], 1)
 
         tickArtifacts[#tickArtifacts + 1] = { tick = tick, label = label }
     end
@@ -318,17 +474,23 @@ function Bar:Build()
     -- is healthy; shown/flashing when missing or under the configured warning
     -- threshold.
     local shoutSize = cfg.battleShoutIconSize or 32
-    local bottomLeftEdgeX = barCenterlineX + curveOffset(0, cfg.barCurveAmplitude, cfg.barCurveDirection) - cfg.barWidth * 0.5
+    local bottomLeftEdgeX = barCenterlineX
+        + curveOffset(0, cfg.barCurveAmplitude, cfg.barCurveDirection)
+        - cfg.barWidth * 0.5
+        - clearance
 
     battleShoutFrame = CreateFrame("Frame", nil, container)
     battleShoutFrame:SetSize(shoutSize, shoutSize)
-    battleShoutFrame:SetPoint("BOTTOMRIGHT", container, "BOTTOMLEFT", bottomLeftEdgeX - 10, barAnchorY)
+    battleShoutFrame:SetPoint("BOTTOMRIGHT", container, "BOTTOMLEFT", bottomLeftEdgeX - 12, barAnchorY)
     battleShoutFrame:Hide()
 
     battleShoutIcon = battleShoutFrame:CreateTexture(nil, "ARTWORK")
     battleShoutIcon:SetAllPoints(battleShoutFrame)
     battleShoutIcon:SetTexture(BATTLE_SHOUT_ICON)
     battleShoutIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if battleShoutIcon.SetRotation then
+        battleShoutIcon:SetRotation(0)
+    end
 
     battleShoutBorder = battleShoutFrame:CreateTexture(nil, "OVERLAY")
     battleShoutBorder:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
@@ -379,9 +541,43 @@ function Bar:Build()
     container._barCenterlineX = barCenterlineX
     container._barAnchorY = barAnchorY
 
+    -- Forever: curved StatusBar segment stack (secret-safe). Owns the fill
+    -- in and out of combat so the curve never collapses to a straight bar.
+    -- Classic Anniversary TOC does not load ForeverDisplay.lua.
+    if ns.ForeverDisplay and ns.ForeverDisplay.Build then
+        ns.ForeverDisplay:Build(
+            container,
+            cfg.barWidth,
+            cfg.barHeight,
+            barCenterlineX,
+            barAnchorY
+        )
+        setSlicesShown(false)
+        ns.ForeverDisplay:SetSecretMode(true)
+    else
+        -- TBC / Classic: optional warrior frame overlay over the slice stack.
+        classicFrameTex = container:CreateTexture(nil, "OVERLAY", nil, 5)
+        placeCurveArt(
+            classicFrameTex,
+            barCenterlineX,
+            barAnchorY,
+            cfg.barWidth,
+            cfg.barHeight,
+            cfg.barCurveAmplitude or 16
+        )
+        applyClassicFrameStyle()
+    end
+
     self:UpdateStance()
     self:UpdateAuras()
     self:ApplyConfig()
+end
+
+function Bar:ApplyFrameStyle()
+    if ns.ForeverDisplay and ns.ForeverDisplay.ApplyFrameStyle then
+        ns.ForeverDisplay:ApplyFrameStyle()
+    end
+    applyClassicFrameStyle()
 end
 
 function Bar:ApplyConfig()
@@ -425,6 +621,11 @@ function Bar:ApplyConfig()
         setFont(numberFS, cfg.numberFontSize, "OUTLINE")
     end
 
+    if ns.ForeverDisplay and ns.ForeverDisplay.RebuildColorCurve then
+        ns.ForeverDisplay:RebuildColorCurve()
+    end
+    self:ApplyFrameStyle()
+
     self:UpdateAuras()
 
     self:Update()
@@ -434,24 +635,70 @@ function Bar:RefreshStanceIcons()
     if not container then return end
     local cfg = ns.Config.db
     local _, class = UnitClass("player")
+    local iconSize = container._stanceIconSize or cfg.stanceIconSize or 24
+    local railCenterY = container._railCenterY
+        or snapPixel(container._barAnchorY + cfg.barHeight * 0.50)
+    local barAnchorY = container._barAnchorY or 36
+    local barCenterlineX = container._barCenterlineX or 0
 
-    for i, art in ipairs(stanceArtifacts) do
+    -- Hide everything when disabled or non-warrior.
+    if not cfg.showStanceIcons or class ~= "WARRIOR" then
+        for _, art in ipairs(stanceArtifacts) do
+            art.icon:Hide()
+            if art.border then art.border:Hide() end
+            art.formIndex = nil
+        end
+        return
+    end
+
+    local Compat = ns.Compat
+    local learned = (Compat and Compat.GetLearnedStances and Compat.GetLearnedStances()) or {}
+    local count = #learned
+
+    for slot = 1, MAX_STANCE_SLOTS do
+        local art = stanceArtifacts[slot]
+        if not art then break end
         local icon = art.icon
         local border = art.border
-        if not cfg.showStanceIcons or class ~= "WARRIOR" then
-            icon:Hide()
-            if border then border:Hide() end
-        else
-            icon:Show()
+
+        if slot <= count then
+            local info = learned[slot]
+            local tex = info.icon
+            if type(tex) ~= "string" and info.spellId and STANCE_FALLBACK_BY_SPELL[info.spellId] then
+                tex = STANCE_FALLBACK_BY_SPELL[info.spellId]
+            end
+            icon:SetTexture(tex)
+            setStanceIconTexCoord(icon)
             if icon.SetDesaturated then icon:SetDesaturated(false) end
             icon:SetVertexColor(1, 1, 1, 1)
-            if i == activeStance then
+
+            -- Pack tightly around the rail center — no gaps for locked stances.
+            local iconY = railCenterY + ((count + 1) * 0.5 - slot) * iconSize
+            local frac = clamp((iconY - barAnchorY) / math.max(1, cfg.barHeight), 0, 1)
+            local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
+            local clearance = container._frameClearance or frameClearancePx()
+            local leftEdgeX = snapPixel(barCenterlineX + xOff - cfg.barWidth * 0.5 - clearance)
+            icon:ClearAllPoints()
+            icon:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX - 2, iconY)
+            icon:Show()
+
+            art.formIndex = info.index
+            local isActive = info.active or (activeStance == info.index)
+            if isActive then
                 icon:SetAlpha(1.0)
-                if border then border:Show() end
+                if border then
+                    border:ClearAllPoints()
+                    border:SetPoint("CENTER", icon, "CENTER", 0, 0)
+                    border:Show()
+                end
             else
                 icon:SetAlpha(0.68)
                 if border then border:Hide() end
             end
+        else
+            icon:Hide()
+            if border then border:Hide() end
+            art.formIndex = nil
         end
     end
 end
@@ -463,10 +710,51 @@ end
 
 function Bar:Update()
     if not container then return end
-    local rageType = (Enum and Enum.PowerType and Enum.PowerType.Rage) or 1
-    currentRage = UnitPower("player", rageType) or 0
-    maxRage = UnitPowerMax("player", rageType) or 100
-    if maxRage <= 0 then maxRage = 100 end
+    local Compat = ns.Compat
+    local rageType = (Compat and Compat.RagePowerType and Compat.RagePowerType())
+        or ((Enum and Enum.PowerType and Enum.PowerType.Rage) or 1)
+
+    local power = UnitPower("player", rageType) or 0
+    local powerMax = UnitPowerMax("player", rageType) or 100
+
+    local powerUsable = (not Compat) or Compat.CanUseNumber(power)
+    local maxUsable = (not Compat) or Compat.CanUseNumber(powerMax)
+
+    -- ForeverDisplay owns the curved fill whenever it is loaded. Segment
+    -- StatusBars accept secret SetValue (wiki Secret_Values / BarValue aspect),
+    -- so combat and out-of-combat share one curved renderer.
+    if ns.ForeverDisplay and ns.ForeverDisplay.IsActive and ns.ForeverDisplay:IsActive() then
+        rageSecretMode = true
+        setSlicesShown(false)
+        currentRage = power
+        if maxUsable then
+            if powerMax <= 0 then powerMax = 100 end
+            maxRage = powerMax
+        elseif maxRage <= 0 then
+            maxRage = 100
+        end
+        if powerUsable then
+            lastAccessibleRage = power
+        end
+        ns.ForeverDisplay:Update(power, maxRage, rageType)
+        return
+    end
+
+    rageSecretMode = false
+
+    if powerUsable then
+        currentRage = power
+        lastAccessibleRage = power
+    else
+        currentRage = lastAccessibleRage
+    end
+
+    if maxUsable then
+        maxRage = powerMax
+        if maxRage <= 0 then maxRage = 100 end
+    elseif maxRage <= 0 then
+        maxRage = 100
+    end
 end
 
 function Bar:UpdateAuras()
@@ -487,46 +775,90 @@ function Bar:UpdateAuras()
     local remaining = 0
     local icon = BATTLE_SHOUT_ICON
     local now = GetTime()
+    local Compat = ns.Compat
+    local aurasSecret = Compat and Compat.ShouldAurasBeSecret and Compat.ShouldAurasBeSecret()
 
-    for i = 1, 40 do
-        local name, rank, buffIcon, count, debuffType, duration, expirationTime = UnitBuff("player", i)
-        if not name then break end
-        if isBattleShoutAura(name, buffIcon) then
+    -- When Forever marks auras secret in combat, skip reading aura payloads
+    -- and rely on the local UNIT_SPELLCAST_SUCCEEDED countdown instead.
+    if aurasSecret then
+        if battleShoutDurationStartedAt and battleShoutLastDuration then
             found = true
+            remaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
+            if remaining <= 0 then
+                found = false
+                remaining = 0
+                battleShoutDurationStartedAt = nil
+                battleShoutLastDuration = nil
+            end
+        else
+            found = false
+            remaining = 0
+        end
+    else
+        local buffIcon, duration, expirationTime, readable
+        if Compat and Compat.FindPlayerBuffBySpellIds then
+            local _
+            _, buffIcon, duration, expirationTime, readable, found =
+                Compat.FindPlayerBuffBySpellIds(
+                    BATTLE_SHOUT_SPELL_IDS,
+                    isBattleShoutAura,
+                    function(ic) return string.lower(ic) == BATTLE_SHOUT_ICON_LOWER end
+                )
+        else
+            for i = 1, 40 do
+                local name, _, ic, _, _, dur, exp = UnitBuff("player", i)
+                if not name then break end
+                if isBattleShoutAura(name, ic) then
+                    found = true
+                    buffIcon = ic
+                    duration = dur
+                    expirationTime = exp
+                    readable = true
+                    break
+                end
+            end
+        end
+
+        if found then
             if buffIcon then icon = buffIcon end
-            if expirationTime and expirationTime > 0 then
-                -- Most clients return an absolute timestamp. Some Classic-era
-                -- APIs/addons surface remaining seconds. Support both so the
-                -- reminder actually hides after refreshing Battle Shout.
+            local expOk = readable and expirationTime
+                and ((not Compat) or Compat.CanUseNumber(expirationTime))
+                and expirationTime > 0
+            local durOk = readable and duration
+                and ((not Compat) or Compat.CanUseNumber(duration))
+                and duration > 0
+
+            if expOk then
                 if expirationTime > now then
                     remaining = expirationTime - now
                 else
                     remaining = expirationTime
                 end
-            elseif duration and duration > 0 then
-                -- Some Classic clients expose duration but not expiration.
-                -- Track when we first saw/refreshed the aura so the countdown
-                -- can still cross into the <=30s warning window.
+            elseif durOk then
                 if (not battleShoutWasFound) or (not battleShoutDurationStartedAt) or battleShoutLastDuration ~= duration then
                     battleShoutDurationStartedAt = now
                 end
                 battleShoutLastDuration = duration
                 remaining = duration - (now - battleShoutDurationStartedAt)
+            elseif battleShoutDurationStartedAt and battleShoutLastDuration then
+                remaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
+            elseif readable then
+                remaining = 999
             else
+                -- Aura present but timing secret: prefer local cast countdown.
                 if battleShoutDurationStartedAt and battleShoutLastDuration then
                     remaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
                 else
                     remaining = 999
                 end
             end
-            break
         end
-    end
 
-    if found and battleShoutDurationStartedAt and battleShoutLastDuration then
-        local localRemaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
-        if localRemaining > remaining then
-            remaining = localRemaining
+        if found and battleShoutDurationStartedAt and battleShoutLastDuration then
+            local localRemaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
+            if localRemaining > remaining then
+                remaining = localRemaining
+            end
         end
     end
 
@@ -541,7 +873,13 @@ function Bar:UpdateAuras()
         battleShoutLastDuration = nil
     end
 
-    if battleShoutIcon then battleShoutIcon:SetTexture(icon) end
+    if battleShoutIcon then
+        battleShoutIcon:SetTexture(icon)
+        battleShoutIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        if battleShoutIcon.SetRotation then
+            battleShoutIcon:SetRotation(0)
+        end
+    end
     if battleShoutTimerFS then
         if found and battleShoutVisible and battleShoutRemaining > 0 and battleShoutRemaining < 999 then
             battleShoutTimerFS:SetText(tostring(math.ceil(battleShoutRemaining)))
@@ -569,7 +907,12 @@ function Bar:OnSpellcastSucceeded(unit, ...)
     end
 
     if matched then
-        local duration = (ns.Config and ns.Config.db and ns.Config.db.battleShoutDuration) or 120
+        local duration = 120
+        if ns.Compat and ns.Compat.BattleShoutFallbackSeconds then
+            duration = ns.Compat.BattleShoutFallbackSeconds()
+        elseif ns.Config and ns.Config.db and ns.Config.db.battleShoutDuration then
+            duration = ns.Config.db.battleShoutDuration
+        end
         battleShoutDurationStartedAt = GetTime()
         battleShoutLastDuration = duration
         battleShoutWasFound = true
@@ -581,8 +924,12 @@ function Bar:OnSpellcastSucceeded(unit, ...)
     end
 end
 
-function Bar:SetInCombat(state)
-    inCombat = state
+function Bar:SetInCombat(_state)
+    -- Combat transitions can flip Forever secret-value restrictions on rage /
+    -- auras. Refresh immediately so we enter or leave StatusBar fallback mode
+    -- without waiting for the next UNIT_POWER_UPDATE.
+    self:Update()
+    self:UpdateAuras()
 end
 
 local TWEEN_SPEED = 350
@@ -593,6 +940,18 @@ function Bar:OnFrame(dt)
     if auraCheckElapsed >= 1.0 then
         auraCheckElapsed = 0
         self:UpdateAuras()
+    end
+
+    -- Secret rage cannot be tweened (arithmetic on secrets errors).
+    if rageSecretMode then
+        self:Render()
+        return
+    end
+
+    local Compat = ns.Compat
+    if Compat and not Compat.CanUseNumber(currentRage) then
+        self:Render()
+        return
     end
 
     local diff = currentRage - displayedRage
@@ -613,7 +972,98 @@ end
 function Bar:Render()
     local cfg = ns.Config.db
     local zones = cfg.zones
-    local retained = cfg.tacticalMasteryRetained
+    local retained = (ns.Config.GetRetainedRage and ns.Config:GetRetainedRage())
+        or cfg.tacticalMasteryRetained
+        or 0
+    local Compat = ns.Compat
+
+    -- ForeverDisplay path: curved StatusBar segments own the fill. Dump-hint
+    -- math and Classic ghost textures still need plain numbers -- hide those
+    -- when rage is not usable; the Forever ghostGate StatusBar replaces the
+    -- notch via engine-side min/max compare.
+    if rageSecretMode or (ns.ForeverDisplay and ns.ForeverDisplay.IsActive and ns.ForeverDisplay:IsActive()) then
+        local powerReadable = (not Compat) or Compat.CanUseNumber(currentRage)
+        if (not powerReadable) or (Compat and Compat.hasSecrets and Compat.NeedsSecretSafeRageDisplay and Compat.NeedsSecretSafeRageDisplay()) then
+            if ns.ForeverDisplay and ns.ForeverDisplay.HideDecisionHints then
+                ns.ForeverDisplay:HideDecisionHints(ghostNotch, ghostLine, dumpHintFS, capGlow)
+            else
+                if ghostNotch then ghostNotch:Hide() end
+                if ghostLine then ghostLine:Hide() end
+                if dumpHintFS then dumpHintFS:Hide() end
+                if capGlow then capGlow:Hide() end
+            end
+        elseif powerReadable then
+            -- Out of combat on Forever: rage is plain -- show dump hint like Classic.
+            if cfg.showGhostLine and currentRage > retained then
+                local frac = retained / 100
+                local xOff = curveOffset(frac, cfg.barCurveAmplitude, cfg.barCurveDirection)
+                local leftEdgeX = container._barCenterlineX + xOff - cfg.barWidth * 0.5
+                local yPos = container._barAnchorY + frac * cfg.barHeight
+
+                ghostNotch:ClearAllPoints()
+                ghostNotch:SetPoint("CENTER", container, "BOTTOMLEFT", leftEdgeX, yPos)
+                ghostNotch:Show()
+
+                ghostLine:ClearAllPoints()
+                ghostLine:SetPoint("RIGHT", container, "BOTTOMLEFT", leftEdgeX - 2, yPos)
+                ghostLine:Show()
+
+                local dumpAmount = math.floor(currentRage - retained + 0.5)
+                dumpHintFS:SetText(("-%d"):format(dumpAmount))
+                local r, g, b
+                if dumpAmount < 15 then
+                    r, g, b = 0.98, 0.78, 0.24
+                elseif dumpAmount < 30 then
+                    r, g, b = 1.00, 0.50, 0.16
+                else
+                    r, g, b = 0.92, 0.16, 0.12
+                end
+                dumpHintFS:SetTextColor(r, g, b, 1.0)
+                dumpHintFS:ClearAllPoints()
+                dumpHintFS:SetPoint("RIGHT", ghostLine, "LEFT", -3, 0)
+                dumpHintFS:Show()
+            else
+                ghostNotch:Hide()
+                ghostLine:Hide()
+                dumpHintFS:Hide()
+            end
+
+            if cfg.rageCapWarn and capGlow then
+                if currentRage >= maxRage - 5 then
+                    local pulse = 0.5 + 0.5 * math.sin(GetTime() * 6)
+                    capGlow:SetColorTexture(0.95, 0.78, 0.30, 0.30 + 0.40 * pulse)
+                    capGlow:Show()
+                else
+                    capGlow:Hide()
+                end
+            end
+        end
+
+        if numberFS and cfg.showNumber then
+            if Compat and Compat.FormatNumber then
+                numberFS:SetText(Compat.FormatNumber(currentRage))
+            else
+                numberFS:SetText(currentRage)
+            end
+            if powerReadable then
+                local r, g, b = zoneColorForRage(currentRage, retained, zones)
+                numberFS:SetTextColor(r, g, b, 1)
+            else
+                numberFS:SetTextColor(0.98, 0.78, 0.24, 1)
+            end
+        end
+
+        if battleShoutFrame and battleShoutVisible then
+            if battleShoutFlash then
+                local pulse = 0.5 + 0.5 * math.sin(GetTime() * 8)
+                battleShoutFrame:SetAlpha(0.35 + 0.65 * pulse)
+            else
+                battleShoutFrame:SetAlpha(1)
+            end
+        end
+        return
+    end
+
     local fillRage = math.floor(displayedRage + 0.5)
     local emptyC = zones.empty
 

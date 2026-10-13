@@ -1,12 +1,16 @@
 -- RageForge: Options.lua
--- Settings panel that registers in the Blizzard Interface Options frame
--- under the AddOns tab. Uses the legacy InterfaceOptions_AddCategory API,
--- which is what TBC Classic / Anniversary 2.5.5 supports.
+-- Settings UI + Blizzard Options > AddOns registration.
 --
--- All controls write directly into ns.Config.db and call RageBar:ApplyConfig()
--- so changes are live (no Apply button needed for display tweaks). Geometry
--- changes (bar width/height/curve) require a /reload because the bar's slice
--- stack is built once at PLAYER_LOGIN; we expose a Reload UI button for that.
+-- Forever / Mainline: Settings.RegisterCanvasLayoutCategory +
+-- Settings.RegisterAddOnCategory (warcraft.wiki.gg Creating a settings menu).
+-- TBC Anniversary: InterfaceOptions_AddCategory fallback.
+--
+-- /rf opens the registered category when possible
+-- (Settings.OpenToCategory / InterfaceOptionsFrame_OpenToCategory),
+-- with a standalone movable window as last-resort fallback.
+--
+-- Controls write ns.Config.db and preview live. Style changes rebuild the
+-- bar via RageBar:Rebuild(); a Reload UI button sits next to the selector.
 
 local ADDON_NAME, ns = ...
 ns.Options = {}
@@ -16,12 +20,18 @@ local panel
 local window
 local registered = false
 local buildError
+local settingsCategory
 local controls = {} -- everything with a _refresh() method, called on panel show
 
--- Apply config changes immediately so the bar updates while the user tweaks.
 local function applyLive()
     if ns.RageBar and ns.RageBar.ApplyConfig then
         ns.RageBar:ApplyConfig()
+    end
+end
+
+local function reloadUI()
+    if ReloadUI then
+        ReloadUI()
     end
 end
 
@@ -116,8 +126,6 @@ local function makeButton(parent, label, onClick, width)
     return b
 end
 
--- A "radio group" rendered as mutually-exclusive checkboxes. Cleaner than
--- UIRadioButtonTemplate, which tends to misbehave in classic clients.
 local radioGroups = {}
 local function makeRadio(parent, label, getter, setter, value, groupId)
     cbCount = cbCount + 1
@@ -130,7 +138,6 @@ local function makeRadio(parent, label, getter, setter, value, groupId)
     cb:SetChecked(getter() == value)
     cb:SetScript("OnClick", function(self)
         if not self:GetChecked() then
-            -- Don't allow unchecking the only selected radio; force-stay-checked.
             self:SetChecked(true)
             return
         end
@@ -153,7 +160,7 @@ local function ensureWindow()
     if window then return end
 
     window = CreateFrame("Frame", "RageForgeOptionsWindow", UIParent)
-    window:SetSize(640, 720)
+    window:SetSize(640, 760)
     window:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     window:SetFrameStrata("DIALOG")
     window:SetMovable(true)
@@ -162,9 +169,6 @@ local function ensureWindow()
     window:SetScript("OnDragStart", function(self) self:StartMoving() end)
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
-    -- Some Classic clients do not expose SetBackdrop unless a backdrop
-    -- template is used. Draw our own simple panel shell so the settings
-    -- window never appears as floating text over the world.
     local bg = window:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("TOPLEFT", window, "TOPLEFT", 8, -8)
     bg:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -8, 8)
@@ -211,160 +215,432 @@ local function ensureWindow()
     window:Hide()
 end
 
+local function openStandalone()
+    ensureWindow()
+    panel:SetParent(window)
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", window, "TOPLEFT", 18, -36)
+    panel:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -18, 18)
+    if panel.refresh then panel.refresh() end
+    panel:Show()
+    window:Show()
+end
+
+local function registerBlizzardCategory()
+    -- Forever / Mainline Settings API (canvas layout keeps our custom controls).
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        panel.OnCommit = function() end
+        panel.OnDefault = function()
+            if panel.default then panel.default() end
+        end
+        panel.OnRefresh = function()
+            if panel.refresh then panel.refresh() end
+        end
+
+        local ok, category, layout = pcall(Settings.RegisterCanvasLayoutCategory, panel, "RageForge")
+        if ok and category then
+            if layout and layout.AddAnchorPoint then
+                layout:AddAnchorPoint("TOPLEFT", 10, -10)
+                layout:AddAnchorPoint("BOTTOMRIGHT", -10, 10)
+            end
+            local okReg, errReg = pcall(Settings.RegisterAddOnCategory, category)
+            if okReg then
+                settingsCategory = category
+                return true
+            end
+            buildError = "Settings.RegisterAddOnCategory failed: " .. tostring(errReg)
+        else
+            buildError = "Settings.RegisterCanvasLayoutCategory failed: " .. tostring(category)
+        end
+    end
+
+    -- TBC Anniversary / Classic legacy AddOns list.
+    if InterfaceOptions_AddCategory then
+        local ok, err = pcall(InterfaceOptions_AddCategory, panel)
+        if ok then
+            return true
+        end
+        buildError = (buildError and (buildError .. "; ") or "")
+            .. "InterfaceOptions_AddCategory failed: " .. tostring(err)
+        return false
+    end
+
+    if not buildError then
+        buildError = "no Blizzard options API; standalone window only"
+    end
+    return false
+end
+
 function Opt:Build()
     if registered then return true end
 
     panel = CreateFrame("Frame", "RageForgeOptionsPanel")
-    panel:SetSize(600, 680)
+    panel:SetSize(600, 520)
     panel.name = "RageForge"
+
+    -- Scrollable canvas so Forever Options / TBC Interface Options never clip
+    -- or overlap footer credits with Display controls.
+    local CONTENT_WIDTH = 560
+    local scroll
+    local okScroll, scrollOrErr = pcall(CreateFrame, "ScrollFrame", "RageForgeOptionsScroll", panel, "UIPanelScrollFrameTemplate")
+    if okScroll and scrollOrErr then
+        scroll = scrollOrErr
+    else
+        scroll = CreateFrame("ScrollFrame", "RageForgeOptionsScroll", panel)
+    end
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -4)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -26, 4)
+
+    local content = CreateFrame("Frame", "RageForgeOptionsScrollChild", scroll)
+    content:SetWidth(CONTENT_WIDTH)
+    content:SetHeight(900)
+    scroll:SetScrollChild(content)
+
+    scroll:EnableMouse(true)
+    scroll:EnableMouseWheel(true)
+    local function onOptionsMouseWheel(scrollFrame, delta)
+        local step = 36
+        local cur = scrollFrame:GetVerticalScroll() or 0
+        local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
+        local nextScroll = cur - (delta * step)
+        if nextScroll < 0 then nextScroll = 0 end
+        if nextScroll > maxScroll then nextScroll = maxScroll end
+        scrollFrame:SetVerticalScroll(nextScroll)
+    end
+    scroll:SetScript("OnMouseWheel", onOptionsMouseWheel)
+
+    local function sizeScrollChild()
+        local top = content:GetTop()
+        local bottom = content._lastBottom and content._lastBottom:GetBottom()
+        if top and bottom then
+            local h = (top - bottom) + 28
+            if h < 400 then h = 400 end
+            content:SetHeight(h)
+        end
+        if scroll.UpdateScrollChildRect then
+            scroll:UpdateScrollChildRect()
+        end
+    end
 
     local cfg = ns.Config.db
 
-    -- Title block
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
+    local title = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 12, -12)
     title:SetText("RageForge")
     title:SetTextColor(1, 0.37, 0.25)
 
-    local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local subtitle = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    subtitle:SetWidth(540)
+    subtitle:SetWidth(CONTENT_WIDTH - 24)
     subtitle:SetJustifyH("LEFT")
-    subtitle:SetText("Smart rage display for stance-dancing TBC warriors. " ..
+    subtitle:SetText("Smart rage display for stance-dancing warriors (TBC Anniversary + WoW Forever). " ..
         "Type |cffff5f3f/rf|r in chat for slash commands.")
 
     -- ===== Position & Scale =====
-    local h1 = makeHeader(panel, "Position & Scale", subtitle, 0, -20)
+    local h1 = makeHeader(content, "Position & Scale", subtitle, 0, -20)
 
-    local lock = makeCheckbox(panel, "Lock bar (uncheck to drag-and-drop)",
+    local lock = makeCheckbox(content, "Lock bar (uncheck to drag-and-drop)",
         function() return cfg.locked end,
         function(v) cfg.locked = v end,
         "When unlocked, the RAGE label changes to a small blue drag hint. Re-lock to return to the clean combat view.")
     lock:SetPoint("TOPLEFT", h1, "BOTTOMLEFT", 0, -8)
 
-    local scale = makeSlider(panel, "Scale", 0.5, 2.0, 0.05,
+    local scale = makeSlider(content, "Scale", 0.5, 2.0, 0.05,
         function() return cfg.scale end,
         function(v) cfg.scale = v end,
         "%s: %.2f")
     scale:SetPoint("TOPLEFT", lock, "BOTTOMLEFT", 4, -28)
 
-    local resetPos = makeButton(panel, "Reset Position", function()
+    local resetPos = makeButton(content, "Reset Position", function()
         cfg.position = { point = "CENTER", relPoint = "CENTER", x = -220, y = 0 }
         applyLive()
     end)
     resetPos:SetPoint("LEFT", scale, "RIGHT", 32, 0)
 
     -- ===== Stance Dance Math =====
-    local h2 = makeHeader(panel, "Stance Dance Math", scale, -4, -36)
+    local h2 = makeHeader(content, "Stance Dance Math", scale, -4, -36)
 
-    local tmHelp = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local tmHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     tmHelp:SetPoint("TOPLEFT", h2, "BOTTOMLEFT", 0, -6)
-    tmHelp:SetWidth(540)
+    tmHelp:SetWidth(CONTENT_WIDTH - 24)
     tmHelp:SetJustifyH("LEFT")
-    tmHelp:SetText("Tactical Mastery rank \194\183 the rage retained on stance change. " ..
-        "Drives the ghost line, dump hint, and zone colors.")
 
-    local tm0 = makeRadio(panel, "0/5  (0 retained)",
-        function() return cfg.tacticalMasteryRetained end,
-        function(v) cfg.tacticalMasteryRetained = v end,
-        0, "tm")
-    tm0:SetPoint("TOPLEFT", tmHelp, "BOTTOMLEFT", 0, -8)
+    local tmAuto
+    local function refreshTmControls()
+        if tmHelp._refresh then tmHelp._refresh() end
+        if tmAuto and tmAuto._refresh then tmAuto._refresh() end
+        for _, sibling in ipairs(radioGroups.tm or {}) do
+            if sibling._refresh then sibling._refresh() end
+        end
+    end
 
-    local tm3 = makeRadio(panel, "3/5  (15 retained)",
-        function() return cfg.tacticalMasteryRetained end,
-        function(v) cfg.tacticalMasteryRetained = v end,
-        15, "tm")
+    local function tmHelpText()
+        local manual = cfg.tacticalMasteryRetained or 0
+        local autoOn = cfg.tacticalMasteryAuto ~= false
+        local detected
+        if ns.Compat and ns.Compat.GetRetainedRage then
+            detected = ns.Compat.GetRetainedRage()
+        end
+        local detectedText = (type(detected) == "number") and tostring(detected) or "not reported yet"
+        if autoOn then
+            return "Detect from talents is on (" .. detectedText .. " rage retained). " ..
+                "Forever: 10 at level 14, plus 3 per Improved Tactical Mastery rank (max 25). " ..
+                "TBC: 5 per Tactical Mastery rank (max 25). Pick a number below to override."
+        end
+        return "Manual override: " .. tostring(manual) .. " rage retained. " ..
+            "Check Detect from talents to read the rank again. Forever 3/5 is 19; TBC 3/5 is 15."
+    end
+
+    tmHelp._refresh = function()
+        tmHelp:SetText(tmHelpText())
+    end
+    tmHelp._refresh()
+    table.insert(controls, tmHelp)
+
+    tmAuto = makeCheckbox(content, "Detect from talents",
+        function() return cfg.tacticalMasteryAuto ~= false end,
+        function(v)
+            cfg.tacticalMasteryAuto = v and true or false
+            if ns.Compat and ns.Compat.InvalidateRetainedRage then
+                ns.Compat:InvalidateRetainedRage()
+            end
+            refreshTmControls()
+        end,
+        "Reads Improved Tactical Mastery or Tactical Mastery from this client's talent API. If the client does not report a rank, the manual value is used.")
+    tmAuto:SetPoint("TOPLEFT", tmHelp, "BOTTOMLEFT", -4, -6)
+
+    local function tmManualGetter()
+        if cfg.tacticalMasteryAuto ~= false then
+            return nil
+        end
+        return cfg.tacticalMasteryRetained
+    end
+
+    local function tmManualSetter(v)
+        cfg.tacticalMasteryAuto = false
+        cfg.tacticalMasteryRetained = v
+        refreshTmControls()
+    end
+
+    local tm0 = makeRadio(content, "0 retained",
+        tmManualGetter, tmManualSetter, 0, "tm")
+    tm0:SetPoint("TOPLEFT", tmAuto, "BOTTOMLEFT", 4, -4)
+
+    local tm3 = makeRadio(content, "15 retained",
+        tmManualGetter, tmManualSetter, 15, "tm")
     tm3:SetPoint("LEFT", tm0, "RIGHT", 130, 0)
 
-    local tm5 = makeRadio(panel, "5/5  (25 retained)",
-        function() return cfg.tacticalMasteryRetained end,
-        function(v) cfg.tacticalMasteryRetained = v end,
-        25, "tm")
+    local tm5 = makeRadio(content, "25 retained",
+        tmManualGetter, tmManualSetter, 25, "tm")
     tm5:SetPoint("LEFT", tm3, "RIGHT", 130, 0)
 
-    -- ===== Display =====
-    local h3 = makeHeader(panel, "Display", tm0, -4, -32)
+    -- ===== Bar Style =====
+    local hStyle = makeHeader(content, "Bar Style", tm0, -4, -28)
 
-    local cbTicks = makeCheckbox(panel, "Threshold ticks (10 / 15 / 25 / 30 / 50 / 75)",
+    local styleHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    styleHelp:SetPoint("TOPLEFT", hStyle, "BOTTOMLEFT", 0, -4)
+    styleHelp:SetWidth(CONTENT_WIDTH - 24)
+    styleHelp:SetJustifyH("LEFT")
+    styleHelp:SetText("Blade (default) is a medium elegant curve. Ribbon is thin. Classic is the original thick curve. " ..
+        "Applies live via bar rebuild; use Reload UI if anything looks wrong.")
+
+    local function applyStyle(name)
+        if ns.Config and ns.Config.ApplyStyle then
+            ns.Config:ApplyStyle(name)
+        end
+        if panel.refresh then panel.refresh() end
+    end
+
+    local styleBlade = makeRadio(content, "Blade",
+        function() return cfg.barStyle or "blade" end,
+        applyStyle,
+        "blade", "barStyle")
+    styleBlade:SetPoint("TOPLEFT", styleHelp, "BOTTOMLEFT", 0, -8)
+
+    local styleRibbon = makeRadio(content, "Ribbon",
+        function() return cfg.barStyle or "blade" end,
+        applyStyle,
+        "ribbon", "barStyle")
+    styleRibbon:SetPoint("LEFT", styleBlade, "RIGHT", 90, 0)
+
+    local styleClassic = makeRadio(content, "Classic",
+        function() return cfg.barStyle or "blade" end,
+        applyStyle,
+        "classic", "barStyle")
+    styleClassic:SetPoint("LEFT", styleRibbon, "RIGHT", 90, 0)
+
+    local reloadBtn = makeButton(content, "Reload UI", reloadUI, 100)
+    reloadBtn:SetPoint("LEFT", styleClassic, "RIGHT", 100, 0)
+
+    -- ===== Frame Overlay =====
+    local hFrame = makeHeader(content, "Frame Overlay", styleBlade, -4, -28)
+
+    local frameHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frameHelp:SetPoint("TOPLEFT", hFrame, "BOTTOMLEFT", 0, -4)
+    frameHelp:SetWidth(CONTENT_WIDTH - 24)
+    frameHelp:SetJustifyH("LEFT")
+    frameHelp:SetText("None (default) draws the bar with no metal rim. Warlord is dark iron with gold trim. " ..
+        "Iron is simple steel. Bloodforged is matte black with molten red-orange trim.")
+
+    local function applyFrame(name)
+        if ns.Config and ns.Config.ApplyFrameStyle then
+            ns.Config:ApplyFrameStyle(name)
+        else
+            cfg.frameStyle = name
+            applyLive()
+        end
+        -- Frame clearance changes icon anchors; rebuild geometry.
+        if ns.RageBar and ns.RageBar.Rebuild then
+            ns.RageBar:Rebuild()
+        end
+        if panel.refresh then panel.refresh() end
+    end
+
+    local frameIron = makeRadio(content, "Iron",
+        function() return cfg.frameStyle or "none" end,
+        applyFrame,
+        "iron", "frameStyle")
+    frameIron:SetPoint("TOPLEFT", frameHelp, "BOTTOMLEFT", 0, -8)
+
+    local frameBlood = makeRadio(content, "Bloodforged",
+        function() return cfg.frameStyle or "none" end,
+        applyFrame,
+        "bloodforged", "frameStyle")
+    frameBlood:SetPoint("LEFT", frameIron, "RIGHT", 70, 0)
+
+    local frameWarlord = makeRadio(content, "Warlord",
+        function() return cfg.frameStyle or "none" end,
+        applyFrame,
+        "warlord", "frameStyle")
+    frameWarlord:SetPoint("LEFT", frameBlood, "RIGHT", 100, 0)
+
+    local frameNone = makeRadio(content, "None",
+        function() return cfg.frameStyle or "none" end,
+        applyFrame,
+        "none", "frameStyle")
+    frameNone:SetPoint("LEFT", frameWarlord, "RIGHT", 90, 0)
+
+    -- ===== Outline thickness =====
+    local hOutline = makeHeader(content, "Outline Thickness", frameIron, -4, -28)
+
+    local outlineHelp = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    outlineHelp:SetPoint("TOPLEFT", hOutline, "BOTTOMLEFT", 0, -4)
+    outlineHelp:SetWidth(CONTENT_WIDTH - 24)
+    outlineHelp:SetJustifyH("LEFT")
+    outlineHelp:SetText("How heavy the colored trim is. Medium (default) is about 1.5 pixels: a solid core with a soft edge. Thin is lighter. Thick is heavier. Colors stay the same. Applies live.")
+
+    local function setOutline(name)
+        cfg.outlineThickness = name
+    end
+
+    local outlineThin = makeRadio(content, "Thin",
+        function() return cfg.outlineThickness or "medium" end,
+        setOutline,
+        "thin", "outline")
+    outlineThin:SetPoint("TOPLEFT", outlineHelp, "BOTTOMLEFT", 0, -8)
+
+    local outlineMedium = makeRadio(content, "Medium",
+        function() return cfg.outlineThickness or "medium" end,
+        setOutline,
+        "medium", "outline")
+    outlineMedium:SetPoint("LEFT", outlineThin, "RIGHT", 90, 0)
+
+    local outlineThick = makeRadio(content, "Thick",
+        function() return cfg.outlineThickness or "medium" end,
+        setOutline,
+        "thick", "outline")
+    outlineThick:SetPoint("LEFT", outlineMedium, "RIGHT", 110, 0)
+
+    -- ===== Display =====
+    local h3 = makeHeader(content, "Display", outlineThin, -4, -28)
+
+    local cbTicks = makeCheckbox(content, "Threshold ticks",
         function() return cfg.showTicks end,
         function(v) cfg.showTicks = v end,
-        "Marks important rage breakpoints so you can read your bar at a glance.")
+        "Marks important rage breakpoints so you can read your bar at a glance. Each style ships its own default set.")
     cbTicks:SetPoint("TOPLEFT", h3, "BOTTOMLEFT", 0, -8)
 
-    local cbGhost = makeCheckbox(panel, "Ghost line + dump hint",
+    local cbGhost = makeCheckbox(content, "Ghost line + dump hint",
         function() return cfg.showGhostLine end,
         function(v) cfg.showGhostLine = v end,
         "Bright notch on the bar's left edge at the rage you'd land on after stance change, plus the live -X label showing rage you'd lose right now.")
     cbGhost:SetPoint("TOPLEFT", cbTicks, "BOTTOMLEFT", 0, -4)
 
-    local cbStances = makeCheckbox(panel, "Stance icon rail",
+    local cbStances = makeCheckbox(content, "Stance icon rail",
         function() return cfg.showStanceIcons end,
         function(v) cfg.showStanceIcons = v end,
         "Shows Battle / Defensive / Berserker stance icons touching the bar's left edge. Icons are cropped and rotated; inactive stances are alpha-dimmed only.")
     cbStances:SetPoint("TOPLEFT", cbGhost, "BOTTOMLEFT", 0, -4)
 
-    local cbNumber = makeCheckbox(panel, "Big rage number above bar",
+    local cbNumber = makeCheckbox(content, "Big rage number above bar",
         function() return cfg.showNumber end,
         function(v) cfg.showNumber = v end)
     cbNumber:SetPoint("TOPLEFT", cbStances, "BOTTOMLEFT", 0, -4)
 
-    local cbCap = makeCheckbox(panel, "Rage cap warning (top of bar pulses near 100)",
+    local cbCap = makeCheckbox(content, "Rage cap warning (top of bar pulses near 100)",
         function() return cfg.rageCapWarn end,
         function(v) cfg.rageCapWarn = v end,
         "Subtle yellow pulse on the top edge of the bar when you're within 5 rage of cap, so you spot wasted rage in heated fights.")
     cbCap:SetPoint("TOPLEFT", cbNumber, "BOTTOMLEFT", 0, -4)
 
-    local cbBattleShout = makeCheckbox(panel, "Battle Shout reminder",
+    local cbBattleShout = makeCheckbox(content, "Battle Shout reminder",
         function() return cfg.showBattleShoutReminder end,
         function(v) cfg.showBattleShoutReminder = v end,
         "Shows a Battle Shout icon at the bottom-left of RageForge when the buff is missing or has 30 seconds or less remaining. Shows a countdown over the icon while expiring.")
     cbBattleShout:SetPoint("TOPLEFT", cbCap, "BOTTOMLEFT", 0, -4)
 
-    local fontSize = makeSlider(panel, "Number font size", 14, 36, 1,
+    local fontSize = makeSlider(content, "Number font size", 14, 36, 1,
         function() return cfg.numberFontSize end,
         function(v) cfg.numberFontSize = v end,
         "%s: %d")
     fontSize:SetPoint("TOPLEFT", cbBattleShout, "BOTTOMLEFT", 4, -28)
 
-    -- ===== Footer =====
-    -- Separator keeps the credits/footer text visually distinct from controls
-    -- so we never overlap the last Display checkbox with the about line again.
-    local sep = panel:CreateTexture(nil, "ARTWORK")
+    -- ===== Credits (end of scroll content -- never panel-bottom anchored) =====
+    local sep = content:CreateTexture(nil, "ARTWORK")
     sep:SetColorTexture(0.55, 0.42, 0.22, 0.6)
     sep:SetHeight(1)
-    sep:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 16, 82)
-    sep:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 82)
+    sep:SetWidth(CONTENT_WIDTH - 24)
+    sep:SetPoint("TOPLEFT", fontSize, "BOTTOMLEFT", -4, -28)
 
-    local about = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    about:SetPoint("BOTTOMLEFT", 16, 56)
-    about:SetWidth(540)
+    local about = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    about:SetPoint("TOPLEFT", sep, "BOTTOMLEFT", 0, -12)
+    about:SetWidth(CONTENT_WIDTH - 24)
     about:SetJustifyH("LEFT")
     about:SetText("Created by Chase Sommer, a game designer who loves to play and build addons and communities around WoW.\n" ..
         "X: x.com/SommerChase  \194\183  YouTube: youtube.com/@chasesommer  \194\183  Patreon: patreon.com/cw/chasesommer")
 
-    local credits = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    credits:SetPoint("BOTTOMLEFT", 16, 30)
-    credits:SetWidth(540)
+    local credits = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    credits:SetPoint("TOPLEFT", about, "BOTTOMLEFT", 0, -10)
+    credits:SetWidth(CONTENT_WIDTH - 24)
     credits:SetJustifyH("LEFT")
     credits:SetText("Bundled font: Prototype by Justin Callaghan (mickeyavenue.com).")
 
-    local footer = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    footer:SetPoint("BOTTOMLEFT", 16, 12)
-    footer:SetWidth(540)
+    local footer = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
+    footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    footer:SetText("RageForge v" .. (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version") or "0.9.8") ..
-        "  \194\183  Settings auto-save. " ..
-        "Bar geometry requires /reload.")
+    local version = "0.14.0"
+    if C_AddOns and C_AddOns.GetAddOnMetadata then
+        version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
+    elseif GetAddOnMetadata then
+        version = GetAddOnMetadata(ADDON_NAME, "Version") or version
+    end
+    footer:SetText("RageForge v" .. version .. "  \194\183  Settings auto-save.")
 
-    -- Blizzard panel hooks
+    content._lastBottom = footer
+
+    local function refreshScrollLayout()
+        sizeScrollChild()
+    end
+
     panel.refresh = function()
         for _, c in ipairs(controls) do
             if c._refresh then c._refresh() end
         end
+        refreshScrollLayout()
     end
 
     panel.default = function()
-        -- Restore all settings (display + position + everything) to addon defaults.
         local function restore(target, defaults)
             for k, v in pairs(defaults) do
                 if type(v) == "table" then
@@ -376,31 +652,35 @@ function Opt:Build()
             end
         end
         restore(ns.Config.db, ns.Config.defaults)
-        applyLive()
+        if ns.Config.ApplyStyle then
+            ns.Config:ApplyStyle(ns.Config.db.barStyle or "blade", { silent = true })
+        else
+            applyLive()
+        end
         if panel.refresh then panel.refresh() end
     end
 
-    panel.okay   = function() end -- we save live, no commit needed
-    panel.cancel = function() end -- no rollback support; live edits already applied
-
-    if InterfaceOptions_AddCategory then
-        local ok, err = pcall(InterfaceOptions_AddCategory, panel)
-        if not ok then
-            buildError = "InterfaceOptions_AddCategory failed; using standalone window: " .. tostring(err)
-        end
-    else
-        buildError = "InterfaceOptions_AddCategory is unavailable; using standalone window"
+    panel.okay = function() end
+    panel.cancel = function() end
+    panel.OnRefresh = function()
+        if panel.refresh then panel.refresh() end
     end
+
+    panel:HookScript("OnShow", function()
+        refreshScrollLayout()
+    end)
+    panel:HookScript("OnSizeChanged", function()
+        refreshScrollLayout()
+    end)
+
+    registerBlizzardCategory()
 
     panel:Hide()
     registered = true
-    if InterfaceOptions_AddCategory and not buildError then buildError = nil end
     return true
 end
 
--- Public: open our standalone settings window. We still register with the
--- Blizzard AddOns tab when possible, but /rf options must always work even
--- when the client refuses to surface that category.
+-- Open Blizzard Options > AddOns > RageForge when registered; else standalone.
 function Opt:Open()
     local ok, built = pcall(self.Build, self)
     if not ok then
@@ -416,12 +696,59 @@ function Opt:Open()
         return
     end
 
-    ensureWindow()
-    panel:SetParent(window)
-    panel:ClearAllPoints()
-    panel:SetPoint("TOPLEFT", window, "TOPLEFT", 18, -36)
-    panel:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -18, 18)
-    if panel.refresh then panel.refresh() end
-    panel:Show()
-    window:Show()
+    if Settings and Settings.OpenToCategory and settingsCategory then
+        local target = settingsCategory
+        if settingsCategory.GetID then
+            local idOk, id = pcall(settingsCategory.GetID, settingsCategory)
+            if idOk and id ~= nil then
+                target = id
+            end
+        end
+        local openOk = pcall(Settings.OpenToCategory, target)
+        if openOk then
+            if panel.refresh then panel.refresh() end
+            return
+        end
+    end
+
+    if InterfaceOptionsFrame_OpenToCategory and panel then
+        -- Classic bug: first call can fail to select; call twice.
+        pcall(InterfaceOptionsFrame_OpenToCategory, panel)
+        pcall(InterfaceOptionsFrame_OpenToCategory, panel)
+        if InterfaceOptionsFrame and InterfaceOptionsFrame.Show then
+            InterfaceOptionsFrame:Show()
+        end
+        if panel.refresh then panel.refresh() end
+        return
+    end
+
+    openStandalone()
+end
+
+function Opt:OpenStandalone()
+    local ok = pcall(self.Build, self)
+    if ok then
+        openStandalone()
+    end
+end
+
+-- Addon compartment click (Forever TOC AddonCompartmentFunc). Must be global.
+function RageForge_OnAddonCompartmentClick()
+    if ns.Options and ns.Options.Open then
+        ns.Options:Open()
+    end
+end
+
+function RageForge_OnAddonCompartmentEnter()
+    if GameTooltip then
+        GameTooltip:SetText("RageForge", 1, 0.82, 0)
+        GameTooltip:AddLine("Open RageForge settings", 1, 1, 1, true)
+        GameTooltip:Show()
+    end
+end
+
+function RageForge_OnAddonCompartmentLeave()
+    if GameTooltip then
+        GameTooltip:Hide()
+    end
 end

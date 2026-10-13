@@ -5,40 +5,52 @@ alwaysApply: true
 
 # RageForge addon — conventions
 
-RageForge is a WoW Classic Anniversary (TBC content) addon written in Lua.
-It targets warrior PvP and helps with stance-dance rage economy.
+RageForge is a warrior stance-dance rage display addon written in Lua.
+It ships **one addon folder** for both **TBC Classic Anniversary** and
+**World of Warcraft: Forever**.
 
-## Target client
+## Target clients
 
-- **Client folder:** `_anniversary_`
-- **Interface number:** `20505` (TBC Anniversary, v2.5.5, as of 2026)
-- **Install path:**
+| Client | Folder (typical) | TOC | Interface |
+| --- | --- | --- | --- |
+| TBC Anniversary | `_anniversary_` | `RageForge_TBC.toc` (+ unsuffixed fallback) | `20506` |
+| WoW Forever | `_classic_beta_` (beta) / Forever live folder | `RageForge_Forever.toc` / `RageForge_Camelot.toc` | `16001` (Forever Beta; may change at launch) |
+
+- Install path (Anniversary):
   `C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns\RageForge\`
-- Per-client TOC suffixes are not used; we ship a single `RageForge.toc`.
-- If a patch bumps the Interface number, update `RageForge.toc` first.
+- Forever uses the Mainline-family addon API (Midnight secret values, `C_Spell`,
+  `C_UnitAuras`). **Do not branch on `WOW_PROJECT_ID`** — Forever has been
+  observed returning Mainline's value; feature-detect via `ns.Compat`.
+- If a patch bumps an Interface number, update the matching TOC first.
+  Confirm Forever live with `/dump select(4, GetBuildInfo())`.
 
 ## Project layout
 
 ```
 rageforge/
-  RageForge/             addon folder; this is what gets copied into AddOns
-    RageForge.toc        manifest, file load order
-    Config.lua           SavedVariables, defaults, /rf slash command
-    Core.lua             event router + OnUpdate driver, no display logic
-    RageBar.lua          curved bar, zones, ghost line, ticks, cap glow
-    Options.lua          standalone /rf options settings window + optional AddOns registration
-    Fonts/Prototype.ttf  bundled font for bar UI (with Prototype.txt readme)
-  install.ps1            PowerShell copy / junction script
-  package.ps1            builds clean release zip in dist/
-  CHANGELOG.md           user-facing release notes
-  LICENSE                MIT license
+  RageForge/                  addon folder; this is what gets copied into AddOns
+    RageForge.toc             unsuffixed fallback (TBC Interface 20506)
+    RageForge_TBC.toc         TBC / Anniversary
+    RageForge_Forever.toc     Forever (Interface 16001)
+    RageForge_Camelot.toc     Forever beta internal alias (same files)
+    Compat.lua                runtime API / secret-value feature detection
+    ForeverDisplay.lua        Forever-only secret-safe StatusBar fill
+    Config.lua                SavedVariables, defaults, /rf slash command
+    Core.lua                  event router + OnUpdate driver, no display logic
+    RageBar.lua               curved bar, zones, ghost line, ticks, cap glow
+    Options.lua               standalone /rf options settings window
+    Fonts/Prototype.ttf       bundled font for bar UI (with Prototype.txt readme)
+  .pkgmeta                    CurseForge / BigWigs packager metadata
+  install.ps1                 PowerShell copy / junction script
+  package.ps1                 builds clean release zip in dist/
+  CHANGELOG.md                user-facing release notes
+  LICENSE                     MIT license
   README.md
-  .cursor/rules/         IDE rules (this file)
+  .cursor/rules/              IDE rules (this file)
 ```
 
-**Load order matters.** Config must load first (provides `ns.Config.db`),
-then Core (init), then RageBar (assumes Config is ready),
-then Options (which reads `ns.Config.db` and writes back through it).
+**Load order matters.** Compat first, then Config (`ns.Config.db`), then
+(Forever only) ForeverDisplay, then Core, RageBar, Options.
 
 ## Lua / WoW API conventions
 
@@ -48,24 +60,48 @@ then Options (which reads `ns.Config.db` and writes back through it).
 - Use `CreateFrame("Frame", ...)` for event handling; one frame per concern
   is fine, but Core owns the main event router.
 - For rage: power type id is `1` (or `Enum.PowerType.Rage` if available).
-- For combat log parsing use `CombatLogGetCurrentEventInfo()`. The first 11
-  fields are always: `timestamp, subevent, hideCaster, sourceGUID, sourceName,
-  sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags`.
-  After that, payload depends on subevent:
-  - `SWING_*`: damage/miss params start at field 12.
-  - `SPELL_*`: `spellId, spellName, spellSchool` at 12-14, then payload.
+- Spell/aura lookups go through `ns.Compat` (`C_Spell` / `C_UnitAuras` with
+  legacy fallbacks). Plain `GetSpellInfo` is missing on Forever.
+- Forever inherits Midnight secret values: tainted code cannot compare or
+  arithmetic on secret UnitPower (primary resources stay secret in combat).
+  Forever always draws through `ns.ForeverDisplay`: dense overlapping
+  StatusBars along the curve with soft-edged `Media/SoftFill`, each with
+  plain `SetMinMaxValues(low, high)` and secret `SetValue(UnitPower)`, plus
+  a single `Media/SoftTrackCurve` background. Do not reintroduce a straight
+  StatusBar fallback. Dump-hint `-X` math still hides while rage is secret.
+- Frame overlays via `cfg.frameStyle`: `none` / `iron` / `bloodforged` /
+  `warlord` (default **none** for new installs; saved choices stay). Dark metal body with the original accent
+  color. `cfg.outlineThickness` is `thin` / `medium` / `thick` (default
+  **medium**, about 1.5 screen px: a 1px solid core plus a feathered edge).
+  Each thickness is a pre-authored texture (`Frame<Style>`, `Frame<Style>Thin`,
+  `Frame<Style>Thick`). Swapping it is live via `ApplyFrameStyle`. No
+  separate end-cap slabs: the same border closes along the top edge of the
+  top segment and the bottom edge of the bottom segment. Forever fill uses
+  dense VERTICAL StatusBars + solid SoftFill.
+  `FRAME_STYLES[k].clearance` pushes stance / Battle Shout icons clear of the rim.
+- Bar styles live in `ns.Config.STYLES` (`classic` / `ribbon` / `blade`).
+  Default for new installs is **blade**. Existing SavedVariables keep their
+  chosen `barStyle` (fillDefaults never overwrites). Geometry from a style
+  change needs `/reload` (slice / segment stacks are built once at login).
+- Do not register `COMBAT_LOG_EVENT_UNFILTERED` on Forever. RageForge does
+  not need the combat log for its current feature set.
 - Avoid per-frame allocations in `OnUpdate` (no table literals, no captures
-  in tight loops). The current OnFrame paths are allocation-free; keep it
+  in tight loops). The Classic OnFrame path stays allocation-free; keep it
   that way.
 
 ## Stance-dance math (the linchpin)
 
-Tactical Mastery in TBC retains 5 rage per rank, max 25 at 5/5. On stance
-change rage drops to `min(currentRage, retainedRage)`. The user-configurable
-value `cfg.tacticalMasteryRetained` is the single source of truth — every
-visual decision (zones, ghost line, number color) routes through it.
+Tactical Mastery in TBC retains 5 rage per rank, max 25 at 5/5. On Forever
+beta 1.60.1 a baseline passive (spell 1310185, level 14) retains 10, and
+Improved Tactical Mastery (spell 12295) adds 3 per rank, still capping at 25.
+On stance change rage drops to `min(currentRage, retainedRage)`.
 
-**Never** hardcode `25`. Always read `ns.Config.db.tacticalMasteryRetained`.
+Visuals call `ns.Config:GetRetainedRage()`. When `cfg.tacticalMasteryAuto`
+is true and `ns.Compat.GetRetainedRage()` returns a number, that detected
+value is used. Otherwise the manual `cfg.tacticalMasteryRetained` stands.
+Selecting a manual radio or `/rf tm <n>` turns auto off.
+
+**Never** hardcode `25`. Always go through `GetRetainedRage()`.
 
 ## Visual conventions
 
@@ -102,17 +138,19 @@ visual decision (zones, ghost line, number color) routes through it.
   rounds `displayedRage` to the nearest whole rage before coloring slices so
   the current-rage row never appears as a faded partial band. Only edge
   feathers use reduced alpha.
-- Stance icons live in `stanceArtifacts`. They are square-cropped and rotated
-  via 8-argument `SetTexCoord` so each spell icon's top edge points left and
-  its bottom edge visually touches the bar. Keep them packed as a tight stack
-  (`stanceIconSize` spacing), with right edges snapped to the bar's left edge.
-  Do not tint/desaturate them; active stance may be alpha 1.0 and inactive
-  stances alpha-dimmed only. Active stance also shows
+- Stance icons live in `stanceArtifacts`. Show **only learned** stances from
+  `GetNumShapeshiftForms` / `GetShapeshiftFormInfo` (via `ns.Compat.GetLearnedStances`).
+  Never hardcode level gates. Re-layout as a tight packed stack with no gaps
+  for locked stances; refresh on `UPDATE_SHAPESHIFT_FORMS`, `SPELLS_CHANGED`,
+  `LEARNED_SPELL_IN_TAB`, and `PLAYER_LEVEL_UP`.   Icons are square-cropped and stay upright (`SetTexCoord(0.08, 0.92, 0.08, 0.92)`,
+  `SetRotation(0)`). Do not tilt them along the curve. Right edges snap to the
+  bar's left edge. Do not tint/desaturate them; active stance may be alpha 1.0
+  and inactive stances alpha-dimmed only. Active stance also shows
   `Interface\\Buttons\\UI-ActionButton-Border` as a gold outline; don't tint
-  the icon itself. Classic can crop/rotate rectangular textures, but it cannot
-  truly mask arbitrary stance icons into a curved silhouette without custom
-  art. If the user wants a perfect bent/cropped strip, create custom TGA art in
-  `RageForge/Textures/` rather than trying to fake masks with frame layers.
+  the icon itself.
+- Forever registers Options via `Settings.RegisterCanvasLayoutCategory`; TBC
+  uses `InterfaceOptions_AddCategory`. `/rf` opens the Blizzard category.
+  Forever TOC also declares AddonCompartmentFunc.
 - Battle Shout reminder lives in RageBar.lua (`battleShoutFrame`). It shows
   only for warriors when Battle Shout is missing or has <=
   `cfg.battleShoutWarnSeconds` remaining. `UNIT_AURA` updates it immediately,
@@ -152,10 +190,18 @@ short and mnemonic.
 
 ## Options panel (Options.lua)
 
-- `/rf` and `/rf options` open RageForge's own standalone movable window. This is the
-  reliable settings path. We may still call legacy `InterfaceOptions_AddCategory`
-  when available, but do not depend on the Blizzard AddOns list surfacing the
-  category on Anniversary clients.
+- Panel content lives in a `ScrollFrame` (`UIPanelScrollFrameTemplate` with a
+  plain ScrollFrame fallback). Credits/footer are the last children of the
+  scroll child — never panel-bottom anchored — so Forever Options and TBC
+  Interface Options never clip controls or overlap the Display section.
+  Mouse-wheel scrolling is wired on the ScrollFrame; content width stays
+  inside the canvas (no horizontal clip).
+- `/rf` and `/rf options` open the Blizzard AddOns category when registered
+  (`Settings.OpenToCategory` / `InterfaceOptionsFrame_OpenToCategory`), with
+  the standalone movable window as fallback. Forever uses
+  `Settings.RegisterCanvasLayoutCategory`; TBC uses
+  `InterfaceOptions_AddCategory`. Do not depend solely on the Blizzard AddOns
+  list surfacing the category on Anniversary clients.
 - Anniversary 2.5.5 does **not** have the modern Dragonflight
   `Settings.RegisterAddOnCategory` API. Don't use it.
 - All controls write directly to `ns.Config.db` and call `RageBar:ApplyConfig()`

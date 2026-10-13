@@ -1,3 +1,5 @@
+# Local release zip. Top-level folder inside the archive is RageForge/.
+# CurseForge tag uploads use .github/workflows/release.yml (BigWigs packager).
 param(
     [string]$Version
 )
@@ -32,6 +34,20 @@ New-Item -ItemType Directory -Path $StageAddon -Force | Out-Null
 New-Item -ItemType Directory -Path $DistDir -Force | Out-Null
 
 Copy-Item -Path (Join-Path $AddonDir "*") -Destination $StageAddon -Recurse -Force
+
+# Multi-client TOC set required for one-zip Anniversary + Forever releases.
+$requiredTocs = @(
+    "RageForge.toc",
+    "RageForge_TBC.toc",
+    "RageForge_Forever.toc",
+    "RageForge_Camelot.toc"
+)
+foreach ($tocName in $requiredTocs) {
+    $tocFile = Join-Path $StageAddon $tocName
+    if (-not (Test-Path $tocFile)) {
+        throw "Missing required TOC in staged build: $tocName"
+    }
+}
 
 # Prototype.ttf ships in releases per the font's own readme, which asks that
 # Prototype.txt be included with any redistribution. Make sure both are present.

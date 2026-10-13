@@ -1,0 +1,33 @@
+# Tag push -> BigWigs packager -> CurseForge (and a GitHub release).
+#
+# Before the first upload:
+#   1. Create the CurseForge project and copy its numeric id.
+#   2. Replace "## X-Curse-Project-ID: 0" in every RageForge TOC with that id.
+#   3. Add a repository secret named CF_API_KEY (CurseForge API token).
+# GITHUB_TOKEN is provided by Actions. Leave CF_API_KEY unset and the
+# CurseForge upload will not run; the id 0 above is only a placeholder.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "**"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Package and upload
+        uses: BigWigsMods/packager@v2
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

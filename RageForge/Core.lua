@@ -9,21 +9,76 @@ local Core = ns.Core
 -- A single hidden frame owns all our events. Keeps the global namespace clean.
 local f = CreateFrame("Frame", "RageForgeCoreFrame", UIParent)
 
-f:RegisterEvent("ADDON_LOADED")
-f:RegisterEvent("PLAYER_LOGIN")
-f:RegisterEvent("PLAYER_ENTERING_WORLD")
-f:RegisterEvent("UNIT_POWER_UPDATE")
-f:RegisterEvent("UNIT_MAXPOWER")
-f:RegisterEvent("UNIT_DISPLAYPOWER")
-f:RegisterEvent("UNIT_AURA")
-f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-f:RegisterEvent("PLAYER_DEAD")
-f:RegisterEvent("PLAYER_ALIVE")
-f:RegisterEvent("PLAYER_UNGHOST")
-f:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-f:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
-f:RegisterEvent("PLAYER_REGEN_DISABLED")
-f:RegisterEvent("PLAYER_REGEN_ENABLED")
+-- Forever/Mainline renamed LEARNED_SPELL_IN_TAB -> LEARNED_SPELL_IN_SKILL_LINE.
+-- Guard every registration so unknown events never error the load.
+local function safeRegister(eventName)
+    if C_EventUtils and C_EventUtils.IsEventValid then
+        if not C_EventUtils.IsEventValid(eventName) then
+            return false
+        end
+    end
+    local ok = pcall(f.RegisterEvent, f, eventName)
+    return ok and true or false
+end
+
+local CORE_EVENTS = {
+    "ADDON_LOADED",
+    "PLAYER_LOGIN",
+    "PLAYER_ENTERING_WORLD",
+    "UNIT_POWER_UPDATE",
+    "UNIT_MAXPOWER",
+    "UNIT_DISPLAYPOWER",
+    "UNIT_AURA",
+    "UNIT_SPELLCAST_SUCCEEDED",
+    "PLAYER_DEAD",
+    "PLAYER_ALIVE",
+    "PLAYER_UNGHOST",
+    "UPDATE_SHAPESHIFT_FORM",
+    "UPDATE_SHAPESHIFT_FORMS",
+    "SPELLS_CHANGED",
+    "LEARNED_SPELL_IN_TAB",          -- TBC / Classic
+    "LEARNED_SPELL_IN_SKILL_LINE",   -- Forever / Mainline (11.0+)
+    "PLAYER_LEVEL_UP",
+    "CHARACTER_POINTS_CHANGED",   -- TBC talent spends
+    "PLAYER_TALENT_UPDATE",       -- retail / Forever talent spends
+    "TRAIT_CONFIG_UPDATED",       -- C_Traits config commit
+    "ACTIVE_TALENT_GROUP_CHANGED",
+    "PLAYER_REGEN_DISABLED",
+    "PLAYER_REGEN_ENABLED",
+}
+
+for i = 1, #CORE_EVENTS do
+    safeRegister(CORE_EVENTS[i])
+end
+
+local function isStanceLearnEvent(event)
+    return event == "UPDATE_SHAPESHIFT_FORM"
+        or event == "UPDATE_SHAPESHIFT_FORMS"
+        or event == "SPELLS_CHANGED"
+        or event == "LEARNED_SPELL_IN_TAB"
+        or event == "LEARNED_SPELL_IN_SKILL_LINE"
+        or event == "PLAYER_LEVEL_UP"
+end
+
+local function isTalentEvent(event)
+    return event == "CHARACTER_POINTS_CHANGED"
+        or event == "PLAYER_TALENT_UPDATE"
+        or event == "TRAIT_CONFIG_UPDATED"
+        or event == "ACTIVE_TALENT_GROUP_CHANGED"
+        or event == "SPELLS_CHANGED"
+        or event == "PLAYER_LEVEL_UP"
+        or event == "LEARNED_SPELL_IN_TAB"
+        or event == "LEARNED_SPELL_IN_SKILL_LINE"
+end
+
+local function refreshRetainedRage()
+    if ns.Compat and ns.Compat.InvalidateRetainedRage then
+        ns.Compat:InvalidateRetainedRage()
+    end
+    if ns.RageBar and ns.RageBar.ApplyConfig then
+        ns.RageBar:ApplyConfig()
+    end
+end
 
 f:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
@@ -40,6 +95,11 @@ f:SetScript("OnEvent", function(_, event, ...)
         end
 
     elseif event == "PLAYER_LOGIN" then
+        -- Talents may already be readable. Drop any cache from early events
+        -- so the first build queries the client.
+        if ns.Compat and ns.Compat.InvalidateRetainedRage then
+            ns.Compat:InvalidateRetainedRage()
+        end
         -- Build UI once the player frame exists.
         ns.RageBar:Build()
         if ns.Options and ns.Options.Build then
@@ -52,6 +112,8 @@ f:SetScript("OnEvent", function(_, event, ...)
         if ns.RageBar.UpdateAuras then ns.RageBar:UpdateAuras() end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Talent data is often ready only after the player is in the world.
+        refreshRetainedRage()
         -- Force a refresh on zone changes / login completion.
         ns.RageBar:Update()
         if ns.RageBar.UpdateAuras then ns.RageBar:UpdateAuras() end
@@ -84,8 +146,13 @@ f:SetScript("OnEvent", function(_, event, ...)
             ns.RageBar:UpdateAuras()
         end
 
-    elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_FORMS" then
-        if ns.RageBar and ns.RageBar.UpdateStance then
+    elseif isStanceLearnEvent(event) or isTalentEvent(event) then
+        if isTalentEvent(event) then
+            refreshRetainedRage()
+        end
+        -- Stance rail shows only learned forms; refresh as soon as a stance
+        -- quest/spell unlocks so Defensive/Berserker appear without /reload.
+        if isStanceLearnEvent(event) and ns.RageBar and ns.RageBar.UpdateStance then
             ns.RageBar:UpdateStance()
         end
 

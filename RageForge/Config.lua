@@ -7,21 +7,70 @@ local C = ns.Config
 
 -- Default settings. These get deep-copied into RageForgeDB on first load and
 -- any missing keys are filled in on subsequent loads (forward-compatible).
+-- Visual style presets. Applied via ApplyStyle(); Rebuild applies live.
+-- "blade" is the default for new installs. Existing SavedVariables keep
+-- whatever barStyle the player already chose (fillDefaults never overwrites).
+C.STYLES = {
+    classic = {
+        label = "Classic",
+        barWidth = 22,
+        barHeight = 280,
+        curveAmplitude = 16,
+        edgeFeather = 2,
+        edgeAlpha = 0.45,
+        numberFontSize = 22,
+        thresholdTicks = { 10, 15, 25, 30, 50, 75 },
+    },
+    ribbon = {
+        label = "Ribbon",
+        barWidth = 12,
+        barHeight = 300,
+        curveAmplitude = 30,
+        edgeFeather = 3,
+        edgeAlpha = 0.55,
+        numberFontSize = 26,
+        thresholdTicks = { 25, 50, 75 },
+    },
+    blade = {
+        label = "Blade",
+        barWidth = 16,
+        barHeight = 290,
+        curveAmplitude = 22,
+        edgeFeather = 2,
+        edgeAlpha = 0.50,
+        numberFontSize = 24,
+        thresholdTicks = { 15, 25, 50, 75 },
+    },
+}
+
 C.defaults = {
-    -- How much rage is retained on stance change.
-    -- Tactical Mastery: 0/5 = 0, 3/5 = 15, 5/5 = 25.
-    -- This is the linchpin of the whole addon. Get it right.
+    -- Manual rage retained on stance change. Used when auto-detect is off
+    -- or the client cannot report a rank. TBC 5/5 and Forever 5/5 are both
+    -- 25. The bar reads Config:GetRetainedRage(), never a hardcoded 25.
     tacticalMasteryRetained = 25,
+    -- Read the rank from GetTalentInfo / C_Traits when the client can.
+    tacticalMasteryAuto = true,
+
+    -- Visual style: "classic" | "ribbon" | "blade"
+    barStyle = "blade",
+
+    -- Warrior frame overlay. New installs default to none.
+    -- Existing SavedVariables keep whatever frameStyle they already have.
+    -- none | iron | bloodforged | warlord
+    frameStyle = "none",
+    -- Accent outline weight. thin | medium | thick. Medium is ~1.5 screen px.
+    outlineThickness = "medium",
 
     -- Bar geometry (logical, before scale). barHeight directly determines
     -- the vertical resolution of the fill -- one 1px slice per logical
     -- pixel of barHeight (see RageBar.lua "Build").
-    barWidth = 22,
-    barHeight = 280,
-    barCurveAmplitude = 16,   -- pixels of horizontal "bow" at the midpoint
+    -- Defaults match the "blade" preset (see C.STYLES).
+    barWidth = 16,
+    barHeight = 290,
+    barCurveAmplitude = 22,   -- pixels of horizontal "bow" at the midpoint
     barCurveDirection = -1,   -- -1 bows left, +1 bows right
     barEdgeFeatherWidth = 2,  -- soft left/right edge pixels per row
-    barEdgeAlpha = 0.45,      -- alpha multiplier for feather strips
+    barEdgeAlpha = 0.50,      -- alpha multiplier for feather strips
 
     -- Position. Anchored to UIParent CENTER by default; user can drag.
     position = {
@@ -34,11 +83,11 @@ C.defaults = {
     locked = false,
 
     -- Threshold ticks shown on the bar (rage values).
-    -- These are the ability rage costs that matter most for warrior decisions.
-    thresholdTicks = { 10, 15, 25, 30, 50, 75 },
+    -- Blade default: meaningful combat breakpoints.
+    thresholdTicks = { 15, 25, 50, 75 },
     showTicks = true,
     showStanceIcons = true,
-    stanceIconSize = 24,
+    stanceIconSize = 22,
 
     -- Visual zones for stance-dance economy. Tones are brighter than v0.5
     -- but still warrior-flavored: emerald, bright gold, molten orange,
@@ -59,7 +108,7 @@ C.defaults = {
 
     -- Big numerical readout in/over the bar.
     showNumber = true,
-    numberFontSize = 22,
+    numberFontSize = 24,
 
     -- Rage cap warning: subtle border glow at 100 rage so you notice waste.
     rageCapWarn = true,
@@ -68,6 +117,9 @@ C.defaults = {
     showBattleShoutReminder = true,
     battleShoutWarnSeconds = 30,
     battleShoutIconSize = 32,
+    -- TBC fallback (2 min) when an aura duration is unreadable. Forever
+    -- uses 180 via Compat.BattleShoutFallbackSeconds and does not rewrite
+    -- this saved value.
     battleShoutDuration = 120,
 }
 
@@ -99,7 +151,124 @@ end
 -- Bump SCHEMA_VERSION whenever a default's *value* changes in a way that
 -- should propagate to existing users (e.g. recolor, layout). fillDefaults
 -- alone won't push new values into a user that already has the key.
-C.SCHEMA_VERSION = 9
+C.SCHEMA_VERSION = 14
+
+-- clearance: extra px beyond barWidth/2 so stance / Battle Shout icons
+-- clear the thin metal rim.
+C.FRAME_STYLES = {
+    none = { label = "None", clearance = 0 },
+    iron = { label = "Iron", clearance = 6 },
+    bloodforged = { label = "Bloodforged", clearance = 6 },
+    warlord = { label = "Warlord", clearance = 7 },
+}
+
+-- Pre-authored accent weights. Suffix is appended to FrameIron / FrameBloodforged / FrameWarlord.
+C.OUTLINE_THICKNESS = {
+    thin = { label = "Thin", suffix = "Thin" },
+    medium = { label = "Medium", suffix = "" },
+    thick = { label = "Thick", suffix = "Thick" },
+}
+
+local FRAME_TEXTURE_NAMES = {
+    iron = "Iron",
+    bloodforged = "Bloodforged",
+    warlord = "Warlord",
+}
+
+function C:FrameTexture(style, thickness)
+    local names = FRAME_TEXTURE_NAMES
+    local base = names[style or ""]
+    if not base then
+        return nil
+    end
+    local key = thickness or (self.db and self.db.outlineThickness) or "medium"
+    local info = self.OUTLINE_THICKNESS[key] or self.OUTLINE_THICKNESS.medium
+    return "Interface\\AddOns\\RageForge\\Media\\Frame" .. base .. info.suffix
+end
+
+function C:ApplyOutlineThickness(name, opts)
+    opts = opts or {}
+    if not self.OUTLINE_THICKNESS[name] then
+        return false
+    end
+    self.db.outlineThickness = name
+    if ns.ForeverDisplay and ns.ForeverDisplay.ApplyFrameStyle then
+        ns.ForeverDisplay:ApplyFrameStyle()
+    end
+    if ns.RageBar and ns.RageBar.ApplyFrameStyle then
+        ns.RageBar:ApplyFrameStyle()
+    end
+    if not opts.silent and self.Print then
+        self:Print(("outline: %s"):format(self.OUTLINE_THICKNESS[name].label))
+    end
+    return true
+end
+
+function C:GetStyle(name)
+    local key = name or (self.db and self.db.barStyle) or self.defaults.barStyle
+    return self.STYLES[key] or self.STYLES.blade
+end
+
+function C:ApplyFrameStyle(name, opts)
+    opts = opts or {}
+    if not self.FRAME_STYLES[name] then
+        return false
+    end
+    self.db.frameStyle = name
+    -- Clearance changes icon anchors — rebuild geometry when possible.
+    if ns.RageBar and ns.RageBar.Rebuild then
+        ns.RageBar:Rebuild()
+    else
+        if ns.ForeverDisplay and ns.ForeverDisplay.ApplyFrameStyle then
+            ns.ForeverDisplay:ApplyFrameStyle()
+        end
+        if ns.RageBar and ns.RageBar.ApplyFrameStyle then
+            ns.RageBar:ApplyFrameStyle()
+        elseif ns.RageBar and ns.RageBar.ApplyConfig then
+            ns.RageBar:ApplyConfig()
+        end
+    end
+    if not opts.silent and self.Print then
+        self:Print(("frame: %s"):format(self.FRAME_STYLES[name].label))
+    end
+    return true
+end
+
+-- Copy a named style's geometry into the live db. Caller should /reload
+-- when barWidth / barHeight / curveAmplitude change (slice stack is built once).
+function C:ApplyStyle(name, opts)
+    opts = opts or {}
+    local style = self.STYLES[name]
+    if not style then
+        return false
+    end
+    self.db.barStyle = name
+    self.db.barWidth = style.barWidth
+    self.db.barHeight = style.barHeight
+    self.db.barCurveAmplitude = style.curveAmplitude
+    self.db.barEdgeFeatherWidth = style.edgeFeather
+    self.db.barEdgeAlpha = style.edgeAlpha
+    self.db.numberFontSize = style.numberFontSize
+    self.db.thresholdTicks = { unpack(style.thresholdTicks) }
+    if ns.RageBar and ns.RageBar.Rebuild then
+        local ok = ns.RageBar:Rebuild()
+        if not opts.silent and self.Print then
+            if ok then
+                self:Print(("style: %s"):format(style.label))
+            else
+                self:Print(("style: %s -- tap Reload UI if the curve looks stale"):format(style.label))
+            end
+        end
+    elseif ns.RageBar and ns.RageBar.ApplyConfig then
+        ns.RageBar:ApplyConfig()
+        if not opts.silent and self.Print then
+            self:Print(("style: %s -- /reload recommended"):format(style.label))
+        end
+    elseif not opts.silent and self.Print then
+        self:Print(("style: %s -- /reload to apply"):format(style.label))
+    end
+    return true
+end
 
 function C:Load()
     RageForgeDB = RageForgeDB or {}
@@ -140,6 +309,33 @@ function C:Load()
         RageForgeDB.thresholdTicks = { unpack(self.defaults.thresholdTicks) }
     end
 
+    if saved < 10 then
+        -- v10 introduced barStyle presets. Do not force a style here:
+        -- fillDefaults supplies the current default (blade) for missing keys,
+        -- and players who already picked a style keep it.
+    end
+
+    if saved < 11 then
+        -- v11 adds frameStyle (iron / bloodforged / none). fillDefaults
+        -- supplies "iron" for missing keys; do not overwrite an existing choice.
+    end
+
+    if saved < 12 then
+        -- v12 adds warlord frame + closed caps / vertical fill polish.
+        -- Existing frameStyle choices are kept.
+    end
+
+    if saved < 13 then
+        -- v13 thinned metal frames. Existing frameStyle choices are kept.
+    end
+
+    if saved < 14 then
+        -- v14 removes Ember / Filigree. Saved choices of those fall back to Warlord.
+        if RageForgeDB.frameStyle == "ember" or RageForgeDB.frameStyle == "filigree" then
+            RageForgeDB.frameStyle = "warlord"
+        end
+    end
+
     RageForgeDB._schemaVersion = C.SCHEMA_VERSION
     self.db = RageForgeDB
     return self.db
@@ -150,6 +346,32 @@ function C:Get(key) return self.db[key] end
 function C:Set(key, value)
     self.db[key] = value
     if ns.RageBar and ns.RageBar.ApplyConfig then ns.RageBar:ApplyConfig() end
+end
+
+-- Visuals call this. Auto uses the talent read when it returns a number;
+-- otherwise the manual slider value stands.
+function C:GetRetainedRage()
+    local db = self.db
+    if db and db.tacticalMasteryAuto ~= false then
+        local compat = ns.Compat
+        if compat and compat.GetRetainedRage then
+            local detected = compat.GetRetainedRage()
+            if type(detected) == "number" then
+                return detected
+            end
+        end
+    end
+    local manual = db and db.tacticalMasteryRetained
+    if type(manual) ~= "number" then
+        return 0
+    end
+    if manual < 0 then
+        return 0
+    end
+    if manual > 25 then
+        return 25
+    end
+    return manual
 end
 
 -- Print a styled chat message to the player.
@@ -176,13 +398,87 @@ local function handleSlash(input)
         C:Print("commands:")
         C:Print("  /rf                   open the RageForge settings window")
         C:Print("  /rf options           open the RageForge settings window")
-        C:Print("  /rf tm <0|3|5>        set Tactical Mastery rank (rage retained on stance change)")
+        C:Print("  /rf tm auto           detect retained rage from talents")
+        C:Print("  /rf tm <0|3|5|n>     manual override (3=15, 5=25, or any 0-25)")
         C:Print("  /rf lock              lock/unlock the bar (drag to move when unlocked)")
         C:Print("  /rf scale <0.5-2.0>   set UI scale")
         C:Print("  /rf reset             reset position to default")
         C:Print("  /rf ticks             toggle threshold tick marks")
         C:Print("  /rf stances           toggle stance icon rail")
         C:Print("  /rf ghost             toggle ghost line (post-stance-dance preview)")
+        C:Print("  /rf style <name>      classic | ribbon | blade  (then /reload)")
+        C:Print("  /rf frame <name>      none | iron | bloodforged | warlord")
+        C:Print("  /rf outline <weight>  thin | medium | thick")
+        C:Print("  /rf status            show client / secret-value diagnostics")
+        return
+    end
+
+    if cmd == "style" then
+        local name = (rest or ""):match("^(%S+)") or ""
+        if name == "" then
+            C:Print(("current style: %s"):format(tostring(C:Get("barStyle") or "blade")))
+            C:Print("usage: /rf style <classic|ribbon|blade>  then /reload")
+            return
+        end
+        if not C.STYLES[name] then
+            C:Print("unknown style. try: classic, ribbon, blade")
+            return
+        end
+        C:ApplyStyle(name)
+        return
+    end
+
+    if cmd == "frame" then
+        local name = (rest or ""):match("^(%S+)") or ""
+        if name == "" then
+            C:Print(("current frame: %s"):format(tostring(C:Get("frameStyle") or "none")))
+            C:Print("usage: /rf frame <none|iron|bloodforged|warlord>")
+            return
+        end
+        if not C.FRAME_STYLES[name] then
+            C:Print("unknown frame. try: none, iron, bloodforged, warlord")
+            return
+        end
+        C:ApplyFrameStyle(name)
+        return
+    end
+
+    if cmd == "outline" then
+        local name = (rest or ""):match("^(%S+)") or ""
+        if name == "" then
+            C:Print(("current outline: %s"):format(tostring(C:Get("outlineThickness") or "medium")))
+            C:Print("usage: /rf outline <thin|medium|thick>")
+            return
+        end
+        if not C.OUTLINE_THICKNESS[name] then
+            C:Print("unknown outline. try: thin, medium, thick")
+            return
+        end
+        C:ApplyOutlineThickness(name)
+        return
+    end
+
+    if cmd == "status" then
+        local Compat = ns.Compat
+        local iface = (Compat and Compat.interfaceVersion) or select(4, GetBuildInfo()) or "?"
+        C:Print(("interface %s"):format(tostring(iface)))
+        if Compat then
+            C:Print(("secrets=%s  C_Spell=%s  C_UnitAuras=%s  ForeverDisplay=%s"):format(
+                Compat.hasSecrets and "yes" or "no",
+                Compat.hasCSpell and "yes" or "no",
+                Compat.hasCUnitAuras and "yes" or "no",
+                ns.ForeverDisplay and "loaded" or "no"
+            ))
+            local secretRage = Compat.NeedsSecretSafeRageDisplay and Compat.NeedsSecretSafeRageDisplay()
+            C:Print(("rage restricted right now: %s"):format(secretRage and "yes" or "no"))
+        end
+        local detected = ns.Compat and ns.Compat.GetRetainedRage and ns.Compat.GetRetainedRage()
+        C:Print(("retained rage: %d (auto=%s, detected=%s, manual=%s)"):format(
+            C:GetRetainedRage(),
+            (C:Get("tacticalMasteryAuto") ~= false) and "yes" or "no",
+            (type(detected) == "number") and tostring(detected) or "unreadable",
+            tostring(C:Get("tacticalMasteryRetained"))
+        ))
         return
     end
 
@@ -196,16 +492,35 @@ local function handleSlash(input)
     end
 
     if cmd == "tm" then
-        local n = tonumber(rest)
-        if n == 0 then C:Set("tacticalMasteryRetained", 0)
-        elseif n == 3 then C:Set("tacticalMasteryRetained", 15)
-        elseif n == 5 then C:Set("tacticalMasteryRetained", 25)
-        elseif n then C:Set("tacticalMasteryRetained", math.max(0, math.min(25, n))) -- raw value too
-        else
-            C:Print("usage: /rf tm <0|3|5>  (or a raw rage number 0-25)")
+        if rest == "auto" or rest == "detect" then
+            if ns.Compat and ns.Compat.InvalidateRetainedRage then
+                ns.Compat:InvalidateRetainedRage()
+            end
+            C:Set("tacticalMasteryAuto", true)
+            local detected = ns.Compat and ns.Compat.GetRetainedRage and ns.Compat.GetRetainedRage()
+            if type(detected) == "number" then
+                C:Print(("Tactical Mastery: talents say %d rage retained"):format(C:GetRetainedRage()))
+            else
+                C:Print(("Tactical Mastery: talents not reported, using manual %d"):format(C:GetRetainedRage()))
+            end
             return
         end
-        C:Print(("Tactical Mastery retained rage: %d"):format(C:Get("tacticalMasteryRetained")))
+        local n = tonumber(rest)
+        local retained
+        if n == 0 then retained = 0
+        elseif n == 3 then retained = 15
+        elseif n == 5 then retained = 25
+        elseif n then retained = math.max(0, math.min(25, n))
+        end
+        if retained == nil then
+            C:Print("usage: /rf tm auto | <0|3|5> | <0-25>")
+            return
+        end
+        -- Manual numbers turn detection off. Set the flag first so the
+        -- ApplyConfig from Set() reads the override.
+        C.db.tacticalMasteryAuto = false
+        C:Set("tacticalMasteryRetained", retained)
+        C:Print(("Tactical Mastery retained rage: %d (manual)"):format(C:Get("tacticalMasteryRetained")))
         return
     end
 
