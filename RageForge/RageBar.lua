@@ -52,7 +52,7 @@ local function frameClearancePx()
         return ns.ForeverDisplay:GetFrameClearance()
     end
     local cfg = ns.Config and ns.Config.db
-    local key = (cfg and cfg.frameStyle) or "warlord"
+    local key = (cfg and cfg.frameStyle) or "none"
     local info = ns.Config and ns.Config.FRAME_STYLES and ns.Config.FRAME_STYLES[key]
     if info and info.clearance then
         return info.clearance
@@ -132,7 +132,7 @@ local function applyClassicFrameStyle()
         return
     end
     local cfg = ns.Config.db
-    local path = ns.Config.FrameTexture and ns.Config:FrameTexture(cfg.frameStyle or "warlord") or nil
+    local path = ns.Config.FrameTexture and ns.Config:FrameTexture(cfg.frameStyle or "none") or nil
     if path then
         setCurveTexture(classicFrameTex, path)
         classicFrameTex:Show()

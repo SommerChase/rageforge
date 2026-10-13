@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.5
+
+- New installs start with frame **None** (no outline). Warlord, Iron, and
+  Bloodforged stay available. Saved frame choices are kept. Outline
+  thickness is unchanged.
+
 ## 0.13.4
 
 - Outline thickness is a setting: Thin, Medium, or Thick. Medium is the

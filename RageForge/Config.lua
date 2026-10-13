@@ -52,9 +52,10 @@ C.defaults = {
     -- Visual style: "classic" | "ribbon" | "blade"
     barStyle = "blade",
 
-    -- Warrior frame overlay. New installs default to warlord.
+    -- Warrior frame overlay. New installs default to none.
+    -- Existing SavedVariables keep whatever frameStyle they already have.
     -- none | iron | bloodforged | warlord
-    frameStyle = "warlord",
+    frameStyle = "none",
     -- Accent outline weight. thin | medium | thick. Medium is ~1.5 screen px.
     outlineThickness = "medium",
 
@@ -398,7 +399,7 @@ local function handleSlash(input)
     if cmd == "frame" then
         local name = (rest or ""):match("^(%S+)") or ""
         if name == "" then
-            C:Print(("current frame: %s"):format(tostring(C:Get("frameStyle") or "warlord")))
+            C:Print(("current frame: %s"):format(tostring(C:Get("frameStyle") or "none")))
             C:Print("usage: /rf frame <none|iron|bloodforged|warlord>")
             return
         end

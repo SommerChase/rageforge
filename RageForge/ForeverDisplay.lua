@@ -127,7 +127,7 @@ end
 -- Outer rim clearance in screen px (icons must sit outside this).
 function FD:GetFrameClearance()
     local cfg = ns.Config and ns.Config.db
-    local key = (cfg and cfg.frameStyle) or "warlord"
+    local key = (cfg and cfg.frameStyle) or "none"
     local info = ns.Config and ns.Config.FRAME_STYLES and ns.Config.FRAME_STYLES[key]
     if info and info.clearance then
         return info.clearance
@@ -199,7 +199,7 @@ local function applyFrameStyle()
         return
     end
     local cfg = ns.Config.db
-    local key = cfg.frameStyle or "warlord"
+    local key = cfg.frameStyle or "none"
     local path = ns.Config.FrameTexture and ns.Config:FrameTexture(key) or nil
     if path then
         setCurveTexture(frameTex, path)

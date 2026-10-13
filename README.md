@@ -216,7 +216,8 @@ For power users / scripts, every setting is also a slash command:
 /rf stances      toggle stance icon rail
 /rf ghost        toggle the ghost (post-stance-dance) line
 /rf style <name> classic | ribbon | blade (then /reload)
-/rf frame <name> none | iron | bloodforged | warlord
+/rf frame <name> none | iron | bloodforged | warlord (default none)
+/rf outline <weight> thin | medium | thick (default medium)
 /rf status       client / secret-value diagnostics (Forever)
 ```
 
@@ -323,9 +324,10 @@ rageforge/
 - **Bar styles:** `/rf style classic|ribbon|blade` (or the settings radios).
   Default is **blade** — medium elegant curve, ticks at 15/25/50/75.
 - **Frame overlays:** `/rf frame none|iron|bloodforged|warlord`.
-  Default is **warlord** (dark iron + gold trim). Iron and Bloodforged are
-  the other thin closed rims. TGA art in `RageForge/Media/`.
-  Existing saved styles are kept. Style changes rebuild live.
+  Default for new installs is **none** (no outline). Warlord, Iron, and
+  Bloodforged stay available. Outline weight is `/rf outline thin|medium|thick`
+  (default **medium**). TGA art in `RageForge/Media/`.
+  Existing saved frame choices are kept. Style changes apply live.
 - **Battle Shout reminder:** uses `C_UnitAuras` when readable; when auras are
   secret in combat, falls back to the local cast countdown from
   `UNIT_SPELLCAST_SUCCEEDED` (party/raid shouts you did not cast may not clear
