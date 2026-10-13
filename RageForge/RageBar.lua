@@ -65,7 +65,6 @@ local battleShoutWasFound = false
 local battleShoutDurationStartedAt = nil
 local battleShoutLastDuration = nil
 local auraCheckElapsed = 0
-local inCombat = false
 
 local STANCES = {
     { texture = "Interface\\Icons\\Ability_Warrior_OffensiveStance" },
@@ -74,7 +73,6 @@ local STANCES = {
 }
 
 local BATTLE_SHOUT_SPELL_ID = 6673
-local BATTLE_SHOUT_NAME = (GetSpellInfo and GetSpellInfo(BATTLE_SHOUT_SPELL_ID)) or "Battle Shout"
 local BATTLE_SHOUT_ICON = "Interface\\Icons\\Ability_Warrior_BattleShout"
 local BATTLE_SHOUT_ICON_LOWER = string.lower(BATTLE_SHOUT_ICON)
 local BATTLE_SHOUT_SPELL_IDS = {
@@ -87,6 +85,19 @@ local BATTLE_SHOUT_SPELL_IDS = {
     [25289] = true,
     [2048] = true,
 }
+
+-- Resolved after Compat loads (TOC order). Forever is missing GetSpellInfo.
+local BATTLE_SHOUT_NAME = "Battle Shout"
+local rageSecretMode = false
+local lastAccessibleRage = 0
+
+local function resolveBattleShoutName()
+    if ns.Compat and ns.Compat.GetSpellName then
+        BATTLE_SHOUT_NAME = ns.Compat.GetSpellName(BATTLE_SHOUT_SPELL_ID) or BATTLE_SHOUT_NAME
+    elseif type(GetSpellInfo) == "function" then
+        BATTLE_SHOUT_NAME = GetSpellInfo(BATTLE_SHOUT_SPELL_ID) or BATTLE_SHOUT_NAME
+    end
+end
 
 -- Square-crop the icon and rotate the sampled texture so the spell icon's
 -- top edge points left on screen. WoW's 8-argument SetTexCoord maps the
@@ -181,8 +192,24 @@ local function curveOffset(t, amplitude, direction)
     return amplitude * p * direction
 end
 
+local function setSlicesShown(shown)
+    for i, s in ipairs(slices) do
+        if shown then
+            s:Show()
+            if sliceLeftFeathers[i] then sliceLeftFeathers[i]:Show() end
+            if sliceRightFeathers[i] then sliceRightFeathers[i]:Show() end
+        else
+            s:Hide()
+            if sliceLeftFeathers[i] then sliceLeftFeathers[i]:Hide() end
+            if sliceRightFeathers[i] then sliceRightFeathers[i]:Hide() end
+        end
+    end
+end
+
 function Bar:Build()
     if container then return end
+
+    resolveBattleShoutName()
 
     local cfg = ns.Config.db
     local leftGutter = 66 -- stance rail + left-side dump hint breathing room
@@ -199,10 +226,12 @@ function Bar:Build()
     container:SetClampedToScreen(true)
     container:EnableMouse(not cfg.locked)
     container:RegisterForDrag("LeftButton")
-    container:SetScript("OnDragStart", function(self) if not cfg.locked then self:StartMoving() end end)
-    container:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
+    container:SetScript("OnDragStart", function(frame)
+        if not cfg.locked then frame:StartMoving() end
+    end)
+    container:SetScript("OnDragStop", function(frame)
+        frame:StopMovingOrSizing()
+        local point, _, relPoint, x, y = frame:GetPoint()
         cfg.position = { point = point, relPoint = relPoint, x = x, y = y }
     end)
 
@@ -379,6 +408,18 @@ function Bar:Build()
     container._barCenterlineX = barCenterlineX
     container._barAnchorY = barAnchorY
 
+    -- Forever-only secret-safe StatusBar (straight fill). Classic TOC does
+    -- not load ForeverDisplay.lua, so this is a no-op on Anniversary.
+    if ns.ForeverDisplay and ns.ForeverDisplay.Build then
+        ns.ForeverDisplay:Build(
+            container,
+            cfg.barWidth,
+            cfg.barHeight,
+            barCenterlineX,
+            barAnchorY
+        )
+    end
+
     self:UpdateStance()
     self:UpdateAuras()
     self:ApplyConfig()
@@ -425,6 +466,10 @@ function Bar:ApplyConfig()
         setFont(numberFS, cfg.numberFontSize, "OUTLINE")
     end
 
+    if ns.ForeverDisplay and ns.ForeverDisplay.RebuildColorCurve then
+        ns.ForeverDisplay:RebuildColorCurve()
+    end
+
     self:UpdateAuras()
 
     self:Update()
@@ -463,10 +508,57 @@ end
 
 function Bar:Update()
     if not container then return end
-    local rageType = (Enum and Enum.PowerType and Enum.PowerType.Rage) or 1
-    currentRage = UnitPower("player", rageType) or 0
-    maxRage = UnitPowerMax("player", rageType) or 100
-    if maxRage <= 0 then maxRage = 100 end
+    local Compat = ns.Compat
+    local rageType = (Compat and Compat.RagePowerType and Compat.RagePowerType())
+        or ((Enum and Enum.PowerType and Enum.PowerType.Rage) or 1)
+
+    local power = UnitPower("player", rageType) or 0
+    local powerMax = UnitPowerMax("player", rageType) or 100
+
+    local powerUsable = (not Compat) or Compat.CanUseNumber(power)
+    local maxUsable = (not Compat) or Compat.CanUseNumber(powerMax)
+
+    -- Forever / Midnight: primary power may be secret in combat. The curved
+    -- slice renderer needs comparisons; switch to ForeverDisplay StatusBar.
+    local wantSecret = Compat and Compat.NeedsSecretSafeRageDisplay and Compat.NeedsSecretSafeRageDisplay()
+    wantSecret = wantSecret or (Compat and Compat.hasSecrets and not powerUsable)
+
+    if wantSecret and ns.ForeverDisplay then
+        if not rageSecretMode then
+            rageSecretMode = true
+            setSlicesShown(false)
+            ns.ForeverDisplay:SetSecretMode(true)
+        end
+        currentRage = power
+        if maxUsable then
+            if powerMax <= 0 then powerMax = 100 end
+            maxRage = powerMax
+        end
+        ns.ForeverDisplay:Update(power, maxRage, rageType)
+        return
+    end
+
+    if rageSecretMode then
+        rageSecretMode = false
+        setSlicesShown(true)
+        if ns.ForeverDisplay then
+            ns.ForeverDisplay:SetSecretMode(false)
+        end
+    end
+
+    if powerUsable then
+        currentRage = power
+        lastAccessibleRage = power
+    else
+        currentRage = lastAccessibleRage
+    end
+
+    if maxUsable then
+        maxRage = powerMax
+        if maxRage <= 0 then maxRage = 100 end
+    elseif maxRage <= 0 then
+        maxRage = 100
+    end
 end
 
 function Bar:UpdateAuras()
@@ -487,46 +579,90 @@ function Bar:UpdateAuras()
     local remaining = 0
     local icon = BATTLE_SHOUT_ICON
     local now = GetTime()
+    local Compat = ns.Compat
+    local aurasSecret = Compat and Compat.ShouldAurasBeSecret and Compat.ShouldAurasBeSecret()
 
-    for i = 1, 40 do
-        local name, rank, buffIcon, count, debuffType, duration, expirationTime = UnitBuff("player", i)
-        if not name then break end
-        if isBattleShoutAura(name, buffIcon) then
+    -- When Forever marks auras secret in combat, skip reading aura payloads
+    -- and rely on the local UNIT_SPELLCAST_SUCCEEDED countdown instead.
+    if aurasSecret then
+        if battleShoutDurationStartedAt and battleShoutLastDuration then
             found = true
+            remaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
+            if remaining <= 0 then
+                found = false
+                remaining = 0
+                battleShoutDurationStartedAt = nil
+                battleShoutLastDuration = nil
+            end
+        else
+            found = false
+            remaining = 0
+        end
+    else
+        local buffIcon, duration, expirationTime, readable
+        if Compat and Compat.FindPlayerBuffBySpellIds then
+            local _
+            _, buffIcon, duration, expirationTime, readable, found =
+                Compat.FindPlayerBuffBySpellIds(
+                    BATTLE_SHOUT_SPELL_IDS,
+                    isBattleShoutAura,
+                    function(ic) return string.lower(ic) == BATTLE_SHOUT_ICON_LOWER end
+                )
+        else
+            for i = 1, 40 do
+                local name, _, ic, _, _, dur, exp = UnitBuff("player", i)
+                if not name then break end
+                if isBattleShoutAura(name, ic) then
+                    found = true
+                    buffIcon = ic
+                    duration = dur
+                    expirationTime = exp
+                    readable = true
+                    break
+                end
+            end
+        end
+
+        if found then
             if buffIcon then icon = buffIcon end
-            if expirationTime and expirationTime > 0 then
-                -- Most clients return an absolute timestamp. Some Classic-era
-                -- APIs/addons surface remaining seconds. Support both so the
-                -- reminder actually hides after refreshing Battle Shout.
+            local expOk = readable and expirationTime
+                and ((not Compat) or Compat.CanUseNumber(expirationTime))
+                and expirationTime > 0
+            local durOk = readable and duration
+                and ((not Compat) or Compat.CanUseNumber(duration))
+                and duration > 0
+
+            if expOk then
                 if expirationTime > now then
                     remaining = expirationTime - now
                 else
                     remaining = expirationTime
                 end
-            elseif duration and duration > 0 then
-                -- Some Classic clients expose duration but not expiration.
-                -- Track when we first saw/refreshed the aura so the countdown
-                -- can still cross into the <=30s warning window.
+            elseif durOk then
                 if (not battleShoutWasFound) or (not battleShoutDurationStartedAt) or battleShoutLastDuration ~= duration then
                     battleShoutDurationStartedAt = now
                 end
                 battleShoutLastDuration = duration
                 remaining = duration - (now - battleShoutDurationStartedAt)
+            elseif battleShoutDurationStartedAt and battleShoutLastDuration then
+                remaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
+            elseif readable then
+                remaining = 999
             else
+                -- Aura present but timing secret: prefer local cast countdown.
                 if battleShoutDurationStartedAt and battleShoutLastDuration then
                     remaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
                 else
                     remaining = 999
                 end
             end
-            break
         end
-    end
 
-    if found and battleShoutDurationStartedAt and battleShoutLastDuration then
-        local localRemaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
-        if localRemaining > remaining then
-            remaining = localRemaining
+        if found and battleShoutDurationStartedAt and battleShoutLastDuration then
+            local localRemaining = battleShoutLastDuration - (now - battleShoutDurationStartedAt)
+            if localRemaining > remaining then
+                remaining = localRemaining
+            end
         end
     end
 
@@ -581,8 +717,12 @@ function Bar:OnSpellcastSucceeded(unit, ...)
     end
 end
 
-function Bar:SetInCombat(state)
-    inCombat = state
+function Bar:SetInCombat(_state)
+    -- Combat transitions can flip Forever secret-value restrictions on rage /
+    -- auras. Refresh immediately so we enter or leave StatusBar fallback mode
+    -- without waiting for the next UNIT_POWER_UPDATE.
+    self:Update()
+    self:UpdateAuras()
 end
 
 local TWEEN_SPEED = 350
@@ -593,6 +733,18 @@ function Bar:OnFrame(dt)
     if auraCheckElapsed >= 1.0 then
         auraCheckElapsed = 0
         self:UpdateAuras()
+    end
+
+    -- Secret rage cannot be tweened (arithmetic on secrets errors).
+    if rageSecretMode then
+        self:Render()
+        return
+    end
+
+    local Compat = ns.Compat
+    if Compat and not Compat.CanUseNumber(currentRage) then
+        self:Render()
+        return
     end
 
     local diff = currentRage - displayedRage
@@ -614,6 +766,41 @@ function Bar:Render()
     local cfg = ns.Config.db
     local zones = cfg.zones
     local retained = cfg.tacticalMasteryRetained
+    local Compat = ns.Compat
+
+    -- Forever secret mode: StatusBar owns the fill. Hide slice math, ghost
+    -- line, dump hint, and cap-glow comparisons -- they all need plain numbers.
+    if rageSecretMode then
+        if ns.ForeverDisplay and ns.ForeverDisplay.HideDecisionHints then
+            ns.ForeverDisplay:HideDecisionHints(ghostNotch, ghostLine, dumpHintFS, capGlow)
+        else
+            if ghostNotch then ghostNotch:Hide() end
+            if ghostLine then ghostLine:Hide() end
+            if dumpHintFS then dumpHintFS:Hide() end
+            if capGlow then capGlow:Hide() end
+        end
+
+        if numberFS and cfg.showNumber then
+            if Compat and Compat.FormatNumber then
+                numberFS:SetText(Compat.FormatNumber(currentRage))
+            else
+                numberFS:SetText(currentRage)
+            end
+            -- Zone text color needs a plain number; keep a neutral warrior tone.
+            numberFS:SetTextColor(0.98, 0.78, 0.24, 1)
+        end
+
+        if battleShoutFrame and battleShoutVisible then
+            if battleShoutFlash then
+                local pulse = 0.5 + 0.5 * math.sin(GetTime() * 8)
+                battleShoutFrame:SetAlpha(0.35 + 0.65 * pulse)
+            else
+                battleShoutFrame:SetAlpha(1)
+            end
+        end
+        return
+    end
+
     local fillRage = math.floor(displayedRage + 0.5)
     local emptyC = zones.empty
 

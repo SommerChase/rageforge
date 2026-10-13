@@ -230,7 +230,7 @@ function Opt:Build()
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     subtitle:SetWidth(540)
     subtitle:SetJustifyH("LEFT")
-    subtitle:SetText("Smart rage display for stance-dancing TBC warriors. " ..
+    subtitle:SetText("Smart rage display for stance-dancing warriors (TBC Anniversary + WoW Forever). " ..
         "Type |cffff5f3f/rf|r in chat for slash commands.")
 
     -- ===== Position & Scale =====
@@ -352,7 +352,13 @@ function Opt:Build()
     footer:SetPoint("BOTTOMLEFT", 16, 12)
     footer:SetWidth(540)
     footer:SetJustifyH("LEFT")
-    footer:SetText("RageForge v" .. (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version") or "0.9.8") ..
+    local version = "0.10.0"
+    if C_AddOns and C_AddOns.GetAddOnMetadata then
+        version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
+    elseif GetAddOnMetadata then
+        version = GetAddOnMetadata(ADDON_NAME, "Version") or version
+    end
+    footer:SetText("RageForge v" .. version ..
         "  \194\183  Settings auto-save. " ..
         "Bar geometry requires /reload.")
 

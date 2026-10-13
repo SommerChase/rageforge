@@ -183,6 +183,24 @@ local function handleSlash(input)
         C:Print("  /rf ticks             toggle threshold tick marks")
         C:Print("  /rf stances           toggle stance icon rail")
         C:Print("  /rf ghost             toggle ghost line (post-stance-dance preview)")
+        C:Print("  /rf status            show client / secret-value diagnostics")
+        return
+    end
+
+    if cmd == "status" then
+        local Compat = ns.Compat
+        local iface = (Compat and Compat.interfaceVersion) or select(4, GetBuildInfo()) or "?"
+        C:Print(("interface %s"):format(tostring(iface)))
+        if Compat then
+            C:Print(("secrets=%s  C_Spell=%s  C_UnitAuras=%s  ForeverDisplay=%s"):format(
+                Compat.hasSecrets and "yes" or "no",
+                Compat.hasCSpell and "yes" or "no",
+                Compat.hasCUnitAuras and "yes" or "no",
+                ns.ForeverDisplay and "loaded" or "no"
+            ))
+            local secretRage = Compat.NeedsSecretSafeRageDisplay and Compat.NeedsSecretSafeRageDisplay()
+            C:Print(("rage restricted right now: %s"):format(secretRage and "yes" or "no"))
+        end
         return
     end
 

@@ -1,11 +1,14 @@
-## Interface: 20505
+## Interface: 20506
 ## Title: RageForge
-## Notes: Smart rage display for stance-dancing TBC warriors. Curved bar, economy zones, ghost line, dump hint.
+## Notes: Smart rage display for stance-dancing warriors. Curved bar, economy zones, ghost line, dump hint.
 ## Author: Chase Sommer
-## Version: 0.9.8
+## Version: 0.10.0
 ## SavedVariables: RageForgeDB
 ## DefaultState: enabled
 
+# Fallback TOC (TBC Anniversary / Classic family when no suffix TOC matches).
+# Forever loads RageForge_Forever.toc / RageForge_Camelot.toc instead.
+Compat.lua
 Config.lua
 Core.lua
 RageBar.lua

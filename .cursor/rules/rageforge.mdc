@@ -5,40 +5,52 @@ alwaysApply: true
 
 # RageForge addon — conventions
 
-RageForge is a WoW Classic Anniversary (TBC content) addon written in Lua.
-It targets warrior PvP and helps with stance-dance rage economy.
+RageForge is a warrior stance-dance rage display addon written in Lua.
+It ships **one addon folder** for both **TBC Classic Anniversary** and
+**World of Warcraft: Forever**.
 
-## Target client
+## Target clients
 
-- **Client folder:** `_anniversary_`
-- **Interface number:** `20505` (TBC Anniversary, v2.5.5, as of 2026)
-- **Install path:**
+| Client | Folder (typical) | TOC | Interface |
+| --- | --- | --- | --- |
+| TBC Anniversary | `_anniversary_` | `RageForge_TBC.toc` (+ unsuffixed fallback) | `20506` |
+| WoW Forever | `_classic_beta_` (beta) / Forever live folder | `RageForge_Forever.toc` / `RageForge_Camelot.toc` | `16001` (Forever Beta; may change at launch) |
+
+- Install path (Anniversary):
   `C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns\RageForge\`
-- Per-client TOC suffixes are not used; we ship a single `RageForge.toc`.
-- If a patch bumps the Interface number, update `RageForge.toc` first.
+- Forever uses the Mainline-family addon API (Midnight secret values, `C_Spell`,
+  `C_UnitAuras`). **Do not branch on `WOW_PROJECT_ID`** — Forever has been
+  observed returning Mainline's value; feature-detect via `ns.Compat`.
+- If a patch bumps an Interface number, update the matching TOC first.
+  Confirm Forever live with `/dump select(4, GetBuildInfo())`.
 
 ## Project layout
 
 ```
 rageforge/
-  RageForge/             addon folder; this is what gets copied into AddOns
-    RageForge.toc        manifest, file load order
-    Config.lua           SavedVariables, defaults, /rf slash command
-    Core.lua             event router + OnUpdate driver, no display logic
-    RageBar.lua          curved bar, zones, ghost line, ticks, cap glow
-    Options.lua          standalone /rf options settings window + optional AddOns registration
-    Fonts/Prototype.ttf  bundled font for bar UI (with Prototype.txt readme)
-  install.ps1            PowerShell copy / junction script
-  package.ps1            builds clean release zip in dist/
-  CHANGELOG.md           user-facing release notes
-  LICENSE                MIT license
+  RageForge/                  addon folder; this is what gets copied into AddOns
+    RageForge.toc             unsuffixed fallback (TBC Interface 20506)
+    RageForge_TBC.toc         TBC / Anniversary
+    RageForge_Forever.toc     Forever (Interface 16001)
+    RageForge_Camelot.toc     Forever beta internal alias (same files)
+    Compat.lua                runtime API / secret-value feature detection
+    ForeverDisplay.lua        Forever-only secret-safe StatusBar fill
+    Config.lua                SavedVariables, defaults, /rf slash command
+    Core.lua                  event router + OnUpdate driver, no display logic
+    RageBar.lua               curved bar, zones, ghost line, ticks, cap glow
+    Options.lua               standalone /rf options settings window
+    Fonts/Prototype.ttf       bundled font for bar UI (with Prototype.txt readme)
+  .pkgmeta                    CurseForge / BigWigs packager metadata
+  install.ps1                 PowerShell copy / junction script
+  package.ps1                 builds clean release zip in dist/
+  CHANGELOG.md                user-facing release notes
+  LICENSE                     MIT license
   README.md
-  .cursor/rules/         IDE rules (this file)
+  .cursor/rules/              IDE rules (this file)
 ```
 
-**Load order matters.** Config must load first (provides `ns.Config.db`),
-then Core (init), then RageBar (assumes Config is ready),
-then Options (which reads `ns.Config.db` and writes back through it).
+**Load order matters.** Compat first, then Config (`ns.Config.db`), then
+(Forever only) ForeverDisplay, then Core, RageBar, Options.
 
 ## Lua / WoW API conventions
 
@@ -48,14 +60,16 @@ then Options (which reads `ns.Config.db` and writes back through it).
 - Use `CreateFrame("Frame", ...)` for event handling; one frame per concern
   is fine, but Core owns the main event router.
 - For rage: power type id is `1` (or `Enum.PowerType.Rage` if available).
-- For combat log parsing use `CombatLogGetCurrentEventInfo()`. The first 11
-  fields are always: `timestamp, subevent, hideCaster, sourceGUID, sourceName,
-  sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags`.
-  After that, payload depends on subevent:
-  - `SWING_*`: damage/miss params start at field 12.
-  - `SPELL_*`: `spellId, spellName, spellSchool` at 12-14, then payload.
+- Spell/aura lookups go through `ns.Compat` (`C_Spell` / `C_UnitAuras` with
+  legacy fallbacks). Plain `GetSpellInfo` is missing on Forever.
+- Forever inherits Midnight secret values: tainted code cannot compare or
+  arithmetic on secret UnitPower (primary resources stay secret in combat).
+  When rage is secret, RageBar switches to `ns.ForeverDisplay` (StatusBar +
+  ColorCurve) and hides ghost line / dump hint / cap-glow math.
+- Do not register `COMBAT_LOG_EVENT_UNFILTERED` on Forever. RageForge does
+  not need the combat log for its current feature set.
 - Avoid per-frame allocations in `OnUpdate` (no table literals, no captures
-  in tight loops). The current OnFrame paths are allocation-free; keep it
+  in tight loops). The Classic OnFrame path stays allocation-free; keep it
   that way.
 
 ## Stance-dance math (the linchpin)

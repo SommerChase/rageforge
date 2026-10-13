@@ -1,0 +1,24 @@
+# BigWigs / CurseForge / Wago packager metadata for RageForge.
+# One addon folder ships multiple client TOC flavors:
+#   RageForge_TBC.toc      -> Classic Anniversary / TBC (Interface 20506)
+#   RageForge_Forever.toc  -> WoW Forever (Interface 16001, Forever Beta)
+#   RageForge_Camelot.toc  -> Forever internal beta alias (same as Forever)
+#   RageForge.toc          -> unsuffixed fallback (TBC)
+#
+# We hand-author suffix TOCs (Forever loads an extra ForeverDisplay.lua),
+# so enable-toc-creation stays off. Upload the zip with -g bcc,forever
+# (or let the packager detect both Interface values from the TOC files).
+
+package-as: RageForge
+
+ignore:
+  - docs
+  - .cursor
+  - .git
+  - .gitignore
+  - install.ps1
+  - package.ps1
+  - build
+  - dist
+
+manual-changelog: CHANGELOG.md

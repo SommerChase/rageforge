@@ -1,18 +1,31 @@
 # RageForge install script
-# Copies (or junctions) the addon into your WoW Anniversary AddOns folder.
+# Copies (or junctions) the addon into a WoW AddOns folder.
 #
 # Usage:
-#   .\install.ps1                  # copy files (default)
+#   .\install.ps1                  # copy into Anniversary (default)
 #   .\install.ps1 -Symlink         # create a junction so edits in the repo are live
 #   .\install.ps1 -Uninstall       # remove the addon from AddOns
-#   .\install.ps1 -WowPath "..."   # override WoW client folder
+#   .\install.ps1 -Client Forever  # target Forever beta folder (_classic_beta_)
+#   .\install.ps1 -WowPath "..."   # override WoW client folder entirely
 
 [CmdletBinding()]
 param(
-    [string]$WowPath = "C:\Program Files (x86)\World of Warcraft\_anniversary_",
+    [ValidateSet("Anniversary", "Forever")]
+    [string]$Client = "Anniversary",
+    [string]$WowPath,
     [switch]$Symlink,
     [switch]$Uninstall
 )
+
+if (-not $WowPath) {
+    if ($Client -eq "Forever") {
+        # Forever beta reported under _classic_beta_ during the 1.60.x beta.
+        # Live launch folder may differ — pass -WowPath if needed.
+        $WowPath = "C:\Program Files (x86)\World of Warcraft\_classic_beta_"
+    } else {
+        $WowPath = "C:\Program Files (x86)\World of Warcraft\_anniversary_"
+    }
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -71,7 +84,13 @@ Write-Host "RageForge installed at:" -ForegroundColor Green
 Write-Host "  $DestDir"
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. Launch WoW Anniversary (TBC)."
+if ($Client -eq "Forever") {
+    Write-Host "  1. Launch WoW Forever (beta/live)."
+    Write-Host "  2. Confirm Interface with: /dump select(4, GetBuildInfo())  (expect 16001 on Forever Beta)."
+} else {
+    Write-Host "  1. Launch WoW Anniversary (TBC)."
+}
 Write-Host "  2. At character select, click AddOns and verify RageForge is enabled."
 Write-Host "  3. In game, type /rf help to see commands. Default Tactical Mastery is 5/5 (25 retained)."
 Write-Host "  4. Type /rf lock to unlock the bar and drag it to position; /rf lock again to lock."
+Write-Host "  5. Optional: /rf status for client / secret-value diagnostics."

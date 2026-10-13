@@ -3,8 +3,9 @@
 <h1 align="center">RageForge</h1>
 
 <p align="center">
-  <em>A smart rage display for stance-dancing TBC warriors on the WoW Classic
-  Anniversary realms. Built for PvP-first decision making.</em>
+  <em>A smart rage display for stance-dancing warriors on WoW Classic
+  Anniversary (TBC) and World of Warcraft: Forever. Built for PvP-first
+  decision making.</em>
 </p>
 
 <p align="center">
@@ -55,7 +56,7 @@ If you've ever stood in front of a healer thinking "do I have enough rage to
 dump and stance-dance into Overpower right now, or will I bleed out?" — this
 addon answers that question without you doing math.
 
-## Features (v0.9.8)
+## Features (v0.10.0)
 
 - **Smoother no-art curved bar** rendered as 1-pixel horizontal rows with
   full-opacity centers and soft left/right feather strips. Row centers are
@@ -123,19 +124,29 @@ addon answers that question without you doing math.
 
 ```powershell
 cd C:\Users\rober\rageforge
-.\install.ps1
+.\install.ps1                  # TBC Anniversary (_anniversary_)
+.\install.ps1 -Client Forever  # WoW Forever beta (_classic_beta_)
 ```
 
-That copies `RageForge\` into:
+Anniversary installs into:
 
 ```
 C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns\RageForge\
 ```
 
+Forever beta installs into:
+
+```
+C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\RageForge\
+```
+
+(Live Forever's folder name may differ after launch — pass `-WowPath`.)
+
 ### Option B: Junction (recommended while developing / tweaking)
 
 ```powershell
 .\install.ps1 -Symlink
+.\install.ps1 -Symlink -Client Forever
 ```
 
 This creates a directory junction so edits in this repo are immediately
@@ -156,15 +167,31 @@ location, pass `-WowPath`:
 
 ## Release Packaging
 
-For CurseForge or GitHub releases, build a clean addon zip:
+For CurseForge, Wago, or GitHub releases, build a clean addon zip:
 
 ```powershell
 .\package.ps1
 ```
 
 That creates `dist\RageForge-v<version>.zip` with the required top-level
-`RageForge\` folder. The package script removes local-only personal-use fonts
-from the release artifact.
+`RageForge\` folder (including all TOC flavors). `.pkgmeta` is included for
+BigWigs / CurseForge packagers.
+
+### Multi-flavor notes (CurseForge / Wago)
+
+One zip, one `RageForge/` folder, multiple TOC files:
+
+| TOC | Client | Interface |
+| --- | --- | --- |
+| `RageForge_TBC.toc` | Classic Anniversary / TBC | `20506` |
+| `RageForge_Forever.toc` | WoW Forever | `16001` (Forever Beta) |
+| `RageForge_Camelot.toc` | Forever beta internal alias | `16001` |
+| `RageForge.toc` | unsuffixed fallback | `20506` |
+
+When uploading with the BigWigs packager, detect both flavors from the TOC
+Interface lines (or pass `-g bcc,forever`). Forever's Interface number is
+sourced from the Warcraft Wiki Forever Beta row and **may change at launch
+(Nov 4 2026)** — confirm with `/dump select(4, GetBuildInfo())`.
 
 ## In-game usage
 
@@ -188,6 +215,7 @@ For power users / scripts, every setting is also a slash command:
 /rf ticks        toggle threshold tick marks
 /rf stances      toggle stance icon rail
 /rf ghost        toggle the ghost (post-stance-dance) line
+/rf status       client / secret-value diagnostics (Forever)
 ```
 
 The most important command is `/rf tm <0|3|5>`. Everything else is cosmetic;
@@ -239,34 +267,63 @@ PvP):
 
 ```
 rageforge/
-+-- README.md            this file
-+-- install.ps1          copy / junction the addon into WoW AddOns
-+-- package.ps1          build clean CurseForge/GitHub release zip
-+-- CHANGELOG.md         release notes
-+-- LICENSE              MIT license
++-- README.md                 this file
++-- .pkgmeta                  CurseForge / BigWigs packager metadata
++-- install.ps1               copy / junction into Anniversary or Forever AddOns
++-- package.ps1               build clean CurseForge/GitHub release zip
++-- CHANGELOG.md              release notes
++-- LICENSE                   MIT license
 +-- RageForge/
-|   +-- RageForge.toc    addon manifest (Interface 20505 = TBC Anniversary)
-|   +-- Config.lua       SavedVariables, defaults, /rf slash command
-|   +-- Core.lua         init, event router, OnUpdate driver
-|   +-- RageBar.lua      the curved bar, zones, ghost line, ticks, glow
-|   +-- Options.lua      standalone /rf settings window
+|   +-- RageForge.toc         unsuffixed fallback (Interface 20506)
+|   +-- RageForge_TBC.toc     TBC Anniversary (20506)
+|   +-- RageForge_Forever.toc Forever (16001 Forever Beta)
+|   +-- RageForge_Camelot.toc Forever beta alias (16001)
+|   +-- Compat.lua            API / secret-value feature detection
+|   +-- ForeverDisplay.lua    Forever-only secret-safe StatusBar fill
+|   +-- Config.lua            SavedVariables, defaults, /rf slash command
+|   +-- Core.lua              init, event router, OnUpdate driver
+|   +-- RageBar.lua           curved bar, zones, ghost line, ticks, glow
+|   +-- Options.lua           standalone /rf settings window
 +-- docs/
 |   +-- branding/
-|   |   +-- banner.png   2:1 hero banner; GitHub social preview, README header
-|   |   +-- logo.png     1:1 square icon; CurseForge thumbnail, app/avatar
-|   +-- screenshots/     in-game screenshots referenced from this README
-+-- .cursor/rules/       Cursor IDE rules for working on this addon
+|   |   +-- banner.png        2:1 hero banner; GitHub social preview, README header
+|   |   +-- logo.png          1:1 square icon; CurseForge thumbnail, app/avatar
+|   +-- screenshots/          in-game screenshots referenced from this README
++-- .cursor/rules/            Cursor IDE rules for working on this addon
 ```
 
 ## Compatibility
 
-- **Target client:** WoW Classic Anniversary, TBC content phase
-  (Interface 20505, version 2.5.5).
-- The addon is class-agnostic in terms of API: it only reads your rage and
-  combat log. It will load on any class but is only useful for warriors.
-- If a future Anniversary patch bumps the Interface number, WoW will mark the
-  addon "out of date." Either tick "Load out of date addons" at the AddOns
-  screen or bump the `## Interface:` line in `RageForge.toc`.
+### TBC Classic Anniversary
+
+- Interface **20506** (`RageForge_TBC.toc`).
+- Full curved bar, ghost line, dump hint, stance rail, Battle Shout reminder.
+
+### World of Warcraft: Forever
+
+- Interface **16001** on Forever Beta (`RageForge_Forever.toc` /
+  `RageForge_Camelot.toc`). Camelot is Forever's internal beta game type;
+  Blizzard may rename it before launch.
+- Forever uses the **Mainline / Midnight** addon API (not Classic). RageForge
+  feature-detects `C_Spell`, `C_UnitAuras`, and secret values — it does **not**
+  branch on `WOW_PROJECT_ID`.
+- **In combat, player rage may be secret.** The curved slice renderer needs
+  Lua comparisons, so RageForge degrades to a straight StatusBar + ColorCurve
+  fill. While restricted:
+  - Ghost line, dump hint (`-X`), and rage-cap glow comparisons are hidden.
+  - The big rage number uses a secret-safe formatter when available.
+  - Out of combat (rage readable again), the full curved bar returns.
+- **Battle Shout reminder:** uses `C_UnitAuras` when readable; when auras are
+  secret in combat, falls back to the local cast countdown from
+  `UNIT_SPELLCAST_SUCCEEDED` (party/raid shouts you did not cast may not clear
+  the reminder until auras become readable again).
+- RageForge does **not** read the combat log (unavailable to addons on Forever).
+
+### General
+
+- Useful for warriors; loads on any class but only warriors generate rage.
+- If a patch bumps Interface, either tick "Load out of date addons" or update
+  the matching TOC. Forever: confirm with `/dump select(4, GetBuildInfo())`.
 
 ## Credits
 
