@@ -13,6 +13,7 @@ globals = {
   "InterfaceOptions_AddCategory", "InterfaceOptionsFrame_OpenToCategory",
   "InterfaceOptionsFrame",
   "Enum", "C_Spell", "C_SpellBook", "C_UnitAuras", "C_Secrets", "C_CurveUtil", "C_AddOns",
+  "C_EventUtils",
   "issecretvalue", "canaccessvalue", "AbbreviateNumbers", "CreateColor",
   "Settings", "AddonCompartmentFrame", "CurveConstants",
   "RageForgeDB", "wipe",

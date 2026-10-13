@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.3
+
+- Safe `RegisterEvent` everywhere (`C_EventUtils.IsEventValid` when present,
+  else `pcall`). Forever no longer errors on `LEARNED_SPELL_IN_TAB`; also
+  listens for `LEARNED_SPELL_IN_SKILL_LINE`.
+
 ## 0.10.2
 
 - **Options > AddOns registration:** Forever uses `Settings.RegisterCanvasLayoutCategory`
