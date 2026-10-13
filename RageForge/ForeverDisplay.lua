@@ -106,14 +106,6 @@ local function styleStatusBar(bar, texturePath)
         bar:SetBackdrop(nil)
     end
     local tex = bar:GetStatusBarTexture()
-    -- NEAREST: linear filtering samples past the texture edge into black and
-    -- draws a dark rim down both sides of every segment. SoftFill is solid.
-    if tex and tex.SetTexture then
-        local ok = pcall(tex.SetTexture, tex, texturePath, "CLAMP", "CLAMP", "NEAREST")
-        if not ok then
-            tex:SetTexture(texturePath)
-        end
-    end
     disableTexelSnap(tex)
     if bar.SetSnapToPixelGrid then
         bar:SetSnapToPixelGrid(false)
@@ -189,14 +181,13 @@ local function placeCurveArt(tex, anchorX, anchorY, width, height, amplitude)
     return scaleX, scaleY
 end
 
--- Frame art stays trilinear so the feathered accent holds together.
--- The empty track is nearest: trilinear was blending its hard edge with
--- transparency and leaving a dark rim wider than the fill.
-local function setCurveTexture(tex, path, filter)
+-- Trilinear keeps a feathered ~1.5px accent continuous. The 4-arg form is
+-- Forever/Mainline; Classic clients fall back to the path.
+local function setCurveTexture(tex, path)
     if not tex or not path then
         return
     end
-    local ok = pcall(tex.SetTexture, tex, path, "CLAMP", "CLAMP", filter or "TRILINEAR")
+    local ok = pcall(tex.SetTexture, tex, path, "CLAMP", "CLAMP", "TRILINEAR")
     if not ok then
         tex:SetTexture(path)
     end
@@ -248,7 +239,7 @@ function FD:Build(parent, width, height, anchorX, anchorY)
     local zones = cfg.zones
 
     trackTex = parent:CreateTexture(nil, "BACKGROUND", nil, 0)
-    setCurveTexture(trackTex, TEX_TRACK_CURVE, "NEAREST")
+    setCurveTexture(trackTex, TEX_TRACK_CURVE)
     placeCurveArt(trackTex, anchorX, anchorY, stroke, height, amp)
     trackTex:Show()
 

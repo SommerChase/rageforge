@@ -1,11 +1,5 @@
 # Changelog
 
-## 0.13.6
-
-- Frame None no longer shows a dark rim on the fill. The empty track is
-  sampled nearest so it stays the same width as the fill, and the solid
-  fill texture no longer picks up a black edge from linear filtering.
-
 ## 0.13.5
 
 - New installs start with frame **None** (no outline). Warlord, Iron, and
