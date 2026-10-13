@@ -52,9 +52,9 @@ C.defaults = {
     -- Visual style: "classic" | "ribbon" | "blade"
     barStyle = "blade",
 
-    -- Warrior frame overlay. New installs default to iron.
-    -- none | iron | bloodforged | warlord | ember | filigree
-    frameStyle = "iron",
+    -- Warrior frame overlay. New installs default to warlord.
+    -- none | iron | bloodforged | warlord
+    frameStyle = "warlord",
 
     -- Bar geometry (logical, before scale). barHeight directly determines
     -- the vertical resolution of the fill -- one 1px slice per logical
@@ -143,17 +143,15 @@ end
 -- Bump SCHEMA_VERSION whenever a default's *value* changes in a way that
 -- should propagate to existing users (e.g. recolor, layout). fillDefaults
 -- alone won't push new values into a user that already has the key.
-C.SCHEMA_VERSION = 13
+C.SCHEMA_VERSION = 14
 
 -- clearance: extra px beyond barWidth/2 so stance / Battle Shout icons
--- clear the rim. Metal frames are thin; illustrated crescents need more room.
+-- clear the thin metal rim.
 C.FRAME_STYLES = {
     none = { label = "None", clearance = 0 },
     iron = { label = "Iron", clearance = 6 },
     bloodforged = { label = "Bloodforged", clearance = 6 },
     warlord = { label = "Warlord", clearance = 7 },
-    ember = { label = "Ember", clearance = 22 },
-    filigree = { label = "Filigree", clearance = 24 },
 }
 
 function C:GetStyle(name)
@@ -278,8 +276,14 @@ function C:Load()
     end
 
     if saved < 13 then
-        -- v13 thins metal frames and adds illustrated Ember / Filigree.
-        -- Existing frameStyle choices are kept.
+        -- v13 thinned metal frames. Existing frameStyle choices are kept.
+    end
+
+    if saved < 14 then
+        -- v14 removes Ember / Filigree. Saved choices of those fall back to Warlord.
+        if RageForgeDB.frameStyle == "ember" or RageForgeDB.frameStyle == "filigree" then
+            RageForgeDB.frameStyle = "warlord"
+        end
     end
 
     RageForgeDB._schemaVersion = C.SCHEMA_VERSION
@@ -326,7 +330,7 @@ local function handleSlash(input)
         C:Print("  /rf stances           toggle stance icon rail")
         C:Print("  /rf ghost             toggle ghost line (post-stance-dance preview)")
         C:Print("  /rf style <name>      classic | ribbon | blade  (then /reload)")
-        C:Print("  /rf frame <name>      none | iron | bloodforged | warlord | ember | filigree")
+        C:Print("  /rf frame <name>      none | iron | bloodforged | warlord")
         C:Print("  /rf status            show client / secret-value diagnostics")
         return
     end
@@ -349,12 +353,12 @@ local function handleSlash(input)
     if cmd == "frame" then
         local name = (rest or ""):match("^(%S+)") or ""
         if name == "" then
-            C:Print(("current frame: %s"):format(tostring(C:Get("frameStyle") or "iron")))
-            C:Print("usage: /rf frame <none|iron|bloodforged|warlord|ember|filigree>")
+            C:Print(("current frame: %s"):format(tostring(C:Get("frameStyle") or "warlord")))
+            C:Print("usage: /rf frame <none|iron|bloodforged|warlord>")
             return
         end
         if not C.FRAME_STYLES[name] then
-            C:Print("unknown frame. try: none, iron, bloodforged, warlord, ember, filigree")
+            C:Print("unknown frame. try: none, iron, bloodforged, warlord")
             return
         end
         C:ApplyFrameStyle(name)

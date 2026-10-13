@@ -33,8 +33,6 @@ local TEX_FRAME = {
     iron = MEDIA .. "FrameIron",
     bloodforged = MEDIA .. "FrameBloodforged",
     warlord = MEDIA .. "FrameWarlord",
-    ember = MEDIA .. "FrameEmber",
-    filigree = MEDIA .. "FrameFiligree",
 }
 -- Authored SoftTrackCurve / Frame* metrics (blade curve; t=0 at TGA bottom).
 local TEX_W, TEX_H = 256, 512
@@ -58,7 +56,7 @@ local function frameClearancePx()
         return ns.ForeverDisplay:GetFrameClearance()
     end
     local cfg = ns.Config and ns.Config.db
-    local key = (cfg and cfg.frameStyle) or "iron"
+    local key = (cfg and cfg.frameStyle) or "warlord"
     local info = ns.Config and ns.Config.FRAME_STYLES and ns.Config.FRAME_STYLES[key]
     if info and info.clearance then
         return info.clearance
@@ -122,7 +120,7 @@ local function applyClassicFrameStyle()
         return
     end
     local cfg = ns.Config.db
-    local path = TEX_FRAME[cfg.frameStyle or "iron"]
+    local path = TEX_FRAME[cfg.frameStyle or "warlord"]
     if path then
         classicFrameTex:SetTexture(path)
         classicFrameTex:Show()

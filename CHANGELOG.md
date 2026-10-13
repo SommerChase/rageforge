@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.1
+
+- Removed Ember and Filigree. Frame choices are None, Iron, Bloodforged, and
+  Warlord. **Warlord** is the default for new installs. Saved settings that
+  still say ember or filigree fall back to Warlord. Blade stays the default
+  bar style.
+
 ## 0.13.0
 
 - **Thin metal frames:** Iron, Bloodforged, and Warlord stay selectable (plus

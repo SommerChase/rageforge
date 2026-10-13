@@ -24,8 +24,6 @@ local TEX_FRAME = {
     iron = MEDIA .. "FrameIron",
     bloodforged = MEDIA .. "FrameBloodforged",
     warlord = MEDIA .. "FrameWarlord",
-    ember = MEDIA .. "FrameEmber",
-    filigree = MEDIA .. "FrameFiligree",
 }
 
 -- Authored texture metrics (blade curve; t=0 at bottom of TGA).
@@ -132,7 +130,7 @@ end
 -- Outer rim clearance in screen px (icons must sit outside this).
 function FD:GetFrameClearance()
     local cfg = ns.Config and ns.Config.db
-    local key = (cfg and cfg.frameStyle) or "iron"
+    local key = (cfg and cfg.frameStyle) or "warlord"
     local info = ns.Config and ns.Config.FRAME_STYLES and ns.Config.FRAME_STYLES[key]
     if info and info.clearance then
         return info.clearance
@@ -193,11 +191,8 @@ end
 
 local function glowColorsForStyle(key)
     -- secret-safe baked tints; intensity comes from StatusBar fill amount
-    if key == "bloodforged" or key == "ember" then
-        -- Blackrock / molten crescent: ember on the inner edge
+    if key == "bloodforged" then
         return 1.0, 0.28, 0.06, 0.95
-    elseif key == "filigree" then
-        return 1.0, 0.82, 0.35, 0.80
     elseif key == "warlord" then
         return 0.85, 0.65, 0.35, 0.70  -- class-tan / gold
     elseif key == "iron" then
@@ -211,7 +206,7 @@ local function applyFrameStyle()
         return
     end
     local cfg = ns.Config.db
-    local key = cfg.frameStyle or "iron"
+    local key = cfg.frameStyle or "warlord"
     local path = TEX_FRAME[key]
     if path then
         frameTex:SetTexture(path)

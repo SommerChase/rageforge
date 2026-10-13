@@ -430,9 +430,8 @@ function Opt:Build()
     frameHelp:SetPoint("TOPLEFT", hFrame, "BOTTOMLEFT", 0, -4)
     frameHelp:SetWidth(CONTENT_WIDTH - 24)
     frameHelp:SetJustifyH("LEFT")
-    frameHelp:SetText("Iron (default), Bloodforged, and Warlord are thin closed metal rims. " ..
-        "Ember and Filigree are illustrated proc-style crescents (molten blade / gold filigree) " ..
-        "with a soft glow around the curve. None hides the rim.")
+    frameHelp:SetText("Thin closed metal rims. Warlord (default) is dark iron with gold trim. " ..
+        "Iron is simple steel. Bloodforged is matte black with molten red-orange trim. None hides the rim.")
 
     local function applyFrame(name)
         if ns.Config and ns.Config.ApplyFrameStyle then
@@ -449,43 +448,31 @@ function Opt:Build()
     end
 
     local frameIron = makeRadio(content, "Iron",
-        function() return cfg.frameStyle or "iron" end,
+        function() return cfg.frameStyle or "warlord" end,
         applyFrame,
         "iron", "frameStyle")
     frameIron:SetPoint("TOPLEFT", frameHelp, "BOTTOMLEFT", 0, -8)
 
     local frameBlood = makeRadio(content, "Bloodforged",
-        function() return cfg.frameStyle or "iron" end,
+        function() return cfg.frameStyle or "warlord" end,
         applyFrame,
         "bloodforged", "frameStyle")
     frameBlood:SetPoint("LEFT", frameIron, "RIGHT", 70, 0)
 
     local frameWarlord = makeRadio(content, "Warlord",
-        function() return cfg.frameStyle or "iron" end,
+        function() return cfg.frameStyle or "warlord" end,
         applyFrame,
         "warlord", "frameStyle")
     frameWarlord:SetPoint("LEFT", frameBlood, "RIGHT", 100, 0)
 
     local frameNone = makeRadio(content, "None",
-        function() return cfg.frameStyle or "iron" end,
+        function() return cfg.frameStyle or "warlord" end,
         applyFrame,
         "none", "frameStyle")
     frameNone:SetPoint("LEFT", frameWarlord, "RIGHT", 90, 0)
 
-    local frameEmber = makeRadio(content, "Ember",
-        function() return cfg.frameStyle or "iron" end,
-        applyFrame,
-        "ember", "frameStyle")
-    frameEmber:SetPoint("TOPLEFT", frameIron, "BOTTOMLEFT", 0, -4)
-
-    local frameFiligree = makeRadio(content, "Filigree",
-        function() return cfg.frameStyle or "iron" end,
-        applyFrame,
-        "filigree", "frameStyle")
-    frameFiligree:SetPoint("LEFT", frameEmber, "RIGHT", 90, 0)
-
     -- ===== Display =====
-    local h3 = makeHeader(content, "Display", frameEmber, -4, -28)
+    local h3 = makeHeader(content, "Display", frameIron, -4, -28)
 
     local cbTicks = makeCheckbox(content, "Threshold ticks",
         function() return cfg.showTicks end,
@@ -552,7 +539,7 @@ function Opt:Build()
     footer:SetPoint("TOPLEFT", credits, "BOTTOMLEFT", 0, -8)
     footer:SetWidth(CONTENT_WIDTH - 24)
     footer:SetJustifyH("LEFT")
-    local version = "0.13.0"
+    local version = "0.13.1"
     if C_AddOns and C_AddOns.GetAddOnMetadata then
         version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or version
     elseif GetAddOnMetadata then

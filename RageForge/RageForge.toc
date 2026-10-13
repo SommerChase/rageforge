@@ -2,7 +2,7 @@
 ## Title: RageForge
 ## Notes: Smart rage display for stance-dancing warriors. Curved bar, economy zones, ghost line, dump hint.
 ## Author: Chase Sommer
-## Version: 0.13.0
+## Version: 0.13.1
 ## SavedVariables: RageForgeDB
 ## DefaultState: enabled
 
