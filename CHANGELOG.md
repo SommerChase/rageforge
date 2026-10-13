@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.7
+
+- Reverted the 0.13.6 fill-edge change. Frame None and the rest of the bar
+  match 0.13.5 again.
+
 ## 0.13.5
 
 - New installs start with frame **None** (no outline). Warlord, Iron, and
