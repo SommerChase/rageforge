@@ -7,7 +7,12 @@
   TBC stays 5 per rank of Tactical Mastery. Detect is the default. The
   manual value remains (`/rf tm`, or the 0 / 15 / 25 choices).
 - Forever Battle Shout fallback is 3 minutes when the aura duration cannot
-  be read. TBC stays 2 minutes. A reported aura duration still wins.
+  be read. That 3 minutes is what the Forever spell pages list for ranks
+  1 through 7. TBC stays 2 minutes. A reported aura duration still wins.
+- Forever notes in the README use Forever beta spell pages, talent trees,
+  and patch notes only. A missing Forever number is left missing. The bar
+  is still drawn from 0 to 100 because no Forever source checked states the
+  base rage cap.
 - Release packaging: `.pkgmeta` keeps the hand-written TOCs
   (`enable-toc-creation: no`). `package.ps1` still builds a local zip.
   `.github/workflows/release.yml` runs the BigWigs packager on a tag push.

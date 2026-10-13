@@ -143,6 +143,10 @@ end
 
 local displayedRage = 0
 local currentRage = 0
+-- Bar scale until UnitPowerMax returns a number. No Forever beta source
+-- checked states the base rage maximum. Boundless Rage (+10/+20/+30 while
+-- it was in the Fury tree) was removed in a later beta note, and that note
+-- does not publish the cap left behind.
 local maxRage = 100
 local activeStance = 0
 local battleShoutVisible = false
